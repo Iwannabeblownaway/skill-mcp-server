@@ -2,9 +2,13 @@
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+import zipfile
+import tarfile
+import io
+import re
 
 from app.api.deps import verify_admin_api_key
 from app.db.crud import skill as skill_crud
@@ -219,14 +223,301 @@ async def update_skill_content(
     }
 
 
+@router.post(
+    "/{name}/files",
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload skill file",
+)
+async def upload_skill_file(
+    name: str,
+    filename: str,
+    file: UploadFile = File(...),
+    admin: dict = Depends(verify_admin_api_key),
+) -> dict:
+    """Upload a file to skill folder.
+
+    Args:
+        name: Skill name
+        filename: Target filename (e.g., 'README.md', 'script.py')
+        file: File content (multipart/form-data)
+    """
+    async with get_db() as conn:
+        skill = await skill_crud.get_by_name(conn, name)
+
+    if skill is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Skill '{name}' not found",
+        )
+
+    # Ensure skill folder exists
+    skill_dir = SKILLS_DIR / skill["path"]
+    skill_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write file
+    file_path = skill_dir / filename
+    content = await file.read()
+    file_path.write_bytes(content)
+
+    return {
+        "name": name,
+        "filename": filename,
+        "size": len(content),
+        "path": str(file_path.relative_to(SKILLS_DIR)),
+    }
+
+
+def _extract_archive(content: bytes, skill_dir: Path) -> list[str]:
+    """Extract archive content to skill folder.
+
+    Supports: .zip, .tar, .tar.gz, .tgz, .tar.bz2, .tar.xz, .gz, .bz2, .xz
+
+    Returns list of extracted filenames.
+    """
+    extracted_files = []
+    skill_dir.mkdir(parents=True, exist_ok=True)
+
+    # Try zip first
+    if zipfile.is_zipfile(io.BytesIO(content)):
+        with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
+            for file_info in zf.infolist():
+                if file_info.is_dir():
+                    continue
+                filename = file_info.filename
+                if "/" in filename or "\\" in filename:
+                    filename = filename.split("/")[-1].split("\\")[-1]
+                if filename:
+                    (skill_dir / filename).write_bytes(zf.read(file_info.filename))
+                    extracted_files.append(filename)
+        return extracted_files
+
+    # Try tar formats
+    try:
+        with tarfile.open(fileobj=io.BytesIO(content), mode="r:*") as tf:
+            for member in tf.getmembers():
+                if member.isfile():
+                    filename = member.name
+                    if "/" in filename or "\\" in filename:
+                        filename = filename.split("/")[-1].split("\\")[-1]
+                    if filename:
+                        (skill_dir / filename).write_bytes(
+                            tf.extractfile(member).read()
+                        )
+                        extracted_files.append(filename)
+            return extracted_files
+    except tarfile.TarError:
+        pass
+
+    # Try single compressed file (.gz, .bz2, .xz without tar)
+    filename = None
+    if content[:2] == b"\x1f\x8b":  # gzip
+        import gzip
+
+        filename = "extracted_file"
+        (skill_dir / filename).write_bytes(gzip.decompress(content))
+        extracted_files.append(filename)
+    elif content[:2] == b"BZ":  # bzip2
+        import bz2
+
+        filename = "extracted_file"
+        (skill_dir / filename).write_bytes(bz2.decompress(content))
+        extracted_files.append(filename)
+    elif content[:2] == b"FD":  # xz
+        import lzma
+
+        filename = "extracted_file"
+        (skill_dir / filename).write_bytes(lzma.decompress(content))
+        extracted_files.append(filename)
+
+    if not extracted_files:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported archive format. Supported: zip, tar, tar.gz, tgz, tar.bz2, tar.xz, gz, bz2, xz",
+        )
+
+    return extracted_files
+
+
+@router.post(
+    "/{name}/upload",
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload skill content (file or archive)",
+)
+async def upload_skill_content(
+    name: str,
+    file: UploadFile = File(...),
+    admin: dict = Depends(verify_admin_api_key),
+) -> dict:
+    """Upload skill content - supports single file or archive.
+
+    - Single SKILL.md: automatically wrapped into skills/{name}/SKILL.md
+    - Archive (.zip, .tar.gz, etc.): extracted to skills/{name}/
+    """
+    async with get_db() as conn:
+        skill = await skill_crud.get_by_name(conn, name)
+
+    if skill is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Skill '{name}' not found",
+        )
+
+    content = await file.read()
+    filename = file.filename or ""
+
+    skill_dir = SKILLS_DIR / skill["path"]
+    skill_dir.mkdir(parents=True, exist_ok=True)
+
+    # Detect if it's an archive
+    is_archive = (
+        zipfile.is_zipfile(io.BytesIO(content))
+        or tarfile.is_tarfile(io.BytesIO(content))
+        or filename.endswith(
+            (
+                ".tar.gz",
+                ".tgz",
+                ".tar.bz2",
+                ".tar.xz",
+                ".gz",
+                ".bz2",
+                ".xz",
+                ".zip",
+                ".tar",
+                ".7z",
+                ".skill",
+            )
+        )
+    )
+
+    if is_archive:
+        extracted_files = _extract_archive(content, skill_dir)
+    else:
+        # Single file: wrap into folder as SKILL.md
+        target_filename = "SKILL.md"
+        (skill_dir / target_filename).write_bytes(content)
+        extracted_files = [target_filename]
+
+    return {
+        "name": name,
+        "extracted_files": extracted_files,
+        "file_count": len(extracted_files),
+    }
+
+
+@router.post(
+    "",
+    response_model=SkillResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create skill from file or archive",
+)
+async def create_skill_from_file(
+    file: UploadFile = File(...),
+    admin: dict = Depends(verify_admin_api_key),
+) -> SkillResponse:
+    """Create a new skill from upload.
+
+    Skill name derived from filename (without extension).
+    Supports: SKILL.md (wrapped in folder), .zip, .tar.gz, etc.
+    """
+    # Get skill name from filename
+    filename = file.filename or "unknown"
+    archive_extensions = (
+        ".skill",
+        ".zip",
+        ".tar",
+        ".tar.gz",
+        ".tgz",
+        ".tar.bz2",
+        ".tar.xz",
+    )
+
+    for ext in archive_extensions:
+        if filename.endswith(ext):
+            skill_name = filename[: -len(ext)]
+            break
+    else:
+        skill_name = filename
+
+    # Sanitize name
+    skill_name = re.sub(r"[^a-zA-Z0-9_-]", "_", skill_name)
+
+    # Read content
+    content = await file.read()
+
+    async with get_db() as conn:
+        # Check if exists
+        existing = await skill_crud.get_by_name(conn, skill_name)
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Skill '{skill_name}' already exists",
+            )
+
+        skill_dir = SKILLS_DIR / skill_name
+        skill_dir.mkdir(parents=True, exist_ok=True)
+
+        # Check if it's an archive
+        is_archive = (
+            zipfile.is_zipfile(io.BytesIO(content))
+            or tarfile.is_tarfile(io.BytesIO(content))
+            or filename.endswith(archive_extensions)
+        )
+
+        if is_archive:
+            _extract_archive(content, skill_dir)
+            description = "Skill uploaded from archive"
+        else:
+            # Single file: wrap as SKILL.md
+            (skill_dir / "SKILL.md").write_bytes(content)
+            description = "Skill uploaded from file"
+
+        # Create database record
+        skill = await skill_crud.create(
+            conn,
+            name=skill_name,
+            description=description,
+            path=skill_name,
+            version="1.0",
+        )
+
+    return SkillResponse(**skill)
+
+
 @router.get(
-    "/{name}/file",
+    "/{name}/files",
+    summary="List skill files",
+)
+async def list_skill_files(
+    name: str,
+    admin: dict = Depends(verify_admin_api_key),
+) -> dict:
+    """List all files in skill folder."""
+    async with get_db() as conn:
+        skill = await skill_crud.get_by_name(conn, name)
+
+    if skill is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Skill '{name}' not found",
+        )
+
+    skill_dir = SKILLS_DIR / skill["path"]
+    if not skill_dir.exists():
+        return {"name": name, "files": []}
+
+    files = [f.name for f in skill_dir.iterdir() if f.is_file()]
+    return {"name": name, "files": files}
+
+
+@router.get(
+    "/{name}/files/{filename}",
     summary="Download skill file",
 )
 async def download_skill_file(
     name: str,
+    filename: str,
 ) -> FileResponse:
-    """Download the SKILL.md file directly."""
+    """Download a file from skill folder."""
     from app.api.deps import get_current_user
 
     # Get current user (not admin, just authenticated)
@@ -247,15 +538,17 @@ async def download_skill_file(
             detail=f"Skill '{name}' not found",
         )
 
-    skill_file = skill_crud.get_skill_content_path(skill["path"])
+    skill_file = SKILLS_DIR / skill["path"] / filename
     if not skill_file.exists():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"SKILL.md not found for skill '{name}'",
+            detail=f"File '{filename}' not found for skill '{name}'",
         )
 
     return FileResponse(
         path=str(skill_file),
-        filename=f"{name}.md",
-        media_type="text/markdown",
+        filename=filename,
+        media_type="text/markdown"
+        if filename.endswith(".md")
+        else "application/octet-stream",
     )
