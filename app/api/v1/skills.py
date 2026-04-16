@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from app.api.deps import verify_admin_api_key
 from app.db.crud import skill as skill_crud
@@ -174,6 +175,47 @@ async def get_skill_content(
         "name": name,
         "path": skill["path"],
         "content": content,
+    }
+
+
+class SkillContentUpdate(BaseModel):
+    """Request model for updating skill content."""
+
+    content: str
+
+
+@router.put(
+    "/{name}/content",
+    summary="Update skill content",
+)
+async def update_skill_content(
+    name: str,
+    content_data: SkillContentUpdate,
+    admin: dict = Depends(verify_admin_api_key),
+) -> dict:
+    """Update skill SKILL.md content via API.
+
+    Use this to upload or update the skill's SKILL.md content.
+    """
+    async with get_db() as conn:
+        skill = await skill_crud.get_by_name(conn, name)
+
+    if skill is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Skill '{name}' not found",
+        )
+
+    # Write content to filesystem
+    skill_file = skill_crud.get_skill_content_path(skill["path"])
+    skill_file.parent.mkdir(parents=True, exist_ok=True)
+    skill_file.write_text(content_data.content, encoding="utf-8")
+
+    return {
+        "name": name,
+        "path": skill["path"],
+        "content_length": len(content_data.content),
+        "message": "Content updated successfully",
     }
 
 

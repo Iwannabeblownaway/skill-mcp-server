@@ -370,3 +370,112 @@ class TestDeleteSkill:
 
         # FastAPI returns 422 for missing required headers
         assert response.status_code in [401, 422]
+
+
+class TestUpdateSkillContent:
+    """Tests for PUT /api/v1/skills/{name}/content endpoint."""
+
+    def test_update_skill_content_success(
+        self, client, admin_auth_headers, mock_get_db
+    ):
+        """Test successfully updating skill content."""
+        conn, cursor = mock_get_db
+
+        mock_user = {
+            "id": 2,
+            "email": "admin@example.com",
+            "role": "admin",
+            "api_key": "admin_key",
+        }
+
+        sample_skill = {
+            "id": 1,
+            "name": "test_skill",
+            "description": "Test skill",
+            "path": "test_skill",
+            "version": "1.0",
+        }
+
+        new_content = "# Updated Skill\n\nNew content here."
+
+        # Create a proper mock Path
+        mock_path = MagicMock()
+        mock_parent = MagicMock()
+        mock_path.parent = mock_parent
+
+        with patch(
+            "app.api.v1.skills.skill_crud.get_by_name",
+            new=AsyncMock(return_value=sample_skill),
+        ):
+            with patch(
+                "app.api.deps.user_crud.get_by_api_key",
+                new=AsyncMock(return_value=mock_user),
+            ):
+                with patch(
+                    "app.api.v1.skills.skill_crud.get_skill_content_path",
+                    return_value=mock_path,
+                ):
+                    with patch("pathlib.Path.mkdir", new_callable=MagicMock()):
+                        with patch("builtins.open", MagicMock()):
+                            with patch(
+                                "pathlib.Path.write_text", new_callable=MagicMock()
+                            ):
+                                response = client.put(
+                                    "/api/v1/skills/test_skill/content",
+                                    json={"content": new_content},
+                                    headers=admin_auth_headers,
+                                )
+
+        assert response.status_code == 200
+        assert response.json()["message"] == "Content updated successfully"
+        assert response.json()["name"] == "test_skill"
+
+    def test_update_skill_content_not_found(
+        self, client, admin_auth_headers, mock_get_db
+    ):
+        """Test updating content for non-existent skill."""
+        conn, cursor = mock_get_db
+
+        mock_user = {
+            "id": 2,
+            "email": "admin@example.com",
+            "role": "admin",
+            "api_key": "admin_key",
+        }
+
+        with patch(
+            "app.api.v1.skills.skill_crud.get_by_name",
+            new=AsyncMock(return_value=None),
+        ):
+            with patch(
+                "app.api.deps.user_crud.get_by_api_key",
+                new=AsyncMock(return_value=mock_user),
+            ):
+                response = client.put(
+                    "/api/v1/skills/nonexistent/content",
+                    json={"content": "# Content"},
+                    headers=admin_auth_headers,
+                )
+
+        assert response.status_code == 404
+
+    def test_update_skill_content_unauthorized(self, client, user_auth_headers):
+        """Test updating content without admin privileges."""
+        mock_user = {
+            "id": 1,
+            "email": "user@example.com",
+            "role": "user",
+            "api_key": "user_key",
+        }
+
+        with patch(
+            "app.api.deps.user_crud.get_by_api_key",
+            new=AsyncMock(return_value=mock_user),
+        ):
+            response = client.put(
+                "/api/v1/skills/test_skill/content",
+                json={"content": "# Content"},
+                headers=user_auth_headers,
+            )
+
+        assert response.status_code == 403
