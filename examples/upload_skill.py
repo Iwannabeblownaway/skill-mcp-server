@@ -13,12 +13,14 @@ from pathlib import Path
 
 # ==================== 配置 ====================
 BASE_URL = "http://localhost:8000"
-API_KEY = "your_admin_api_key_here"  # 替换为你的 admin API key
+API_KEY = "2rotINY-6BEbIOpHKMaQNrmVe324uJ56W0mBWTLYRFI"  # Admin API Key
 
 HEADERS = {"X-API-Key": API_KEY}
 
 # 示例 Skill 路径（OpenCode 内置的 skill-auditor）
-EXAMPLE_SKILL_PATH = Path(r"C:\Users\Administrator\.config\opencode\skills\skill-auditor")
+EXAMPLE_SKILL_PATH = Path(
+    r"C:\Users\Administrator\.config\opencode\skills\skill-auditor"
+)
 
 
 def upload_single_file(filepath: str, skill_name: str = None):
@@ -26,32 +28,58 @@ def upload_single_file(filepath: str, skill_name: str = None):
 
     Args:
         filepath: 文件路径
-        skill_name: 可选，指定 skill 名称（默认从文件名提取）
+        skill_name: 指定 skill 名称（必须）
     """
     if skill_name is None:
+        # 从文件路径提取
         skill_name = Path(filepath).stem
+        if skill_name.upper() == "SKILL":
+            skill_name = Path(filepath).parent.name
+
+    filename = Path(filepath).name
 
     print(f"\n[方式1] 上传单个文件: {filepath}")
+    print(f"       Skill 名称: {skill_name}")
     print("-" * 50)
 
-    with open(filepath, "rb") as f:
-        filename = Path(filepath).name
-        files = {"file": (filename, f, "text/markdown")}
-        response = requests.post(
-            f"{BASE_URL}/api/v1/skills",
-            files=files,
-            headers=HEADERS,
-        )
+    # 先创建 skill 元数据
+    response = requests.post(
+        f"{BASE_URL}/api/v1/skills/json",
+        json={
+            "name": skill_name,
+            "description": f"Skill from {filename}",
+        },
+        headers=HEADERS,
+    )
 
-    if response.status_code == 201:
-        data = response.json()
-        print(f"✅ 创建成功!")
-        print(f"   Skill: {data['name']}")
-        print(f"   Path: skills/{data['path']}/")
-        return data
-    else:
-        print(f"❌ 失败: {response.status_code} - {response.text}")
+    if response.status_code == 409:
+        print(f"⚠️ Skill 已存在，跳过创建")
+        skill = {"name": skill_name}
+    elif response.status_code != 201:
+        print(f"❌ 创建失败: {response.status_code} - {response.text}")
         return None
+    else:
+        skill = response.json()
+        print(f"✅ 创建成功: {skill['name']}")
+
+    # 上传内容
+    with open(filepath, "rb") as f:
+        content = f.read()
+
+    content_response = requests.put(
+        f"{BASE_URL}/api/v1/skills/{skill_name}/content",
+        json={"content": content.decode("utf-8")},
+        headers=HEADERS,
+    )
+
+    if content_response.status_code == 200:
+        print(f"✅ 内容上传成功")
+        return skill
+    else:
+        print(
+            f"❌ 内容上传失败: {content_response.status_code} - {content_response.text}"
+        )
+        return skill
 
 
 def upload_archive(filepath: str):
@@ -121,8 +149,26 @@ def grant_skill(skill_name: str, user_id: int):
     print(f"\n[授权] {skill_name} -> user_id:{user_id}")
     print("-" * 50)
 
+    # 先获取 skill_id
+    resp = requests.get(f"{BASE_URL}/api/v1/skills", headers=HEADERS)
+    if resp.status_code != 200:
+        print(f"❌ 获取 skills 列表失败")
+        return False
+
+    skill_id = None
+    for s in resp.json().get("skills", []):
+        if s["name"] == skill_name:
+            skill_id = s.get("id")
+            break
+
+    if not skill_id:
+        print(f"❌ Skill '{skill_name}' not found")
+        return False
+
+    # 授权
     response = requests.post(
-        f"{BASE_URL}/api/v1/user_skills?user_id={user_id}&skill_name={skill_name}",
+        f"{BASE_URL}/api/v1/user_skills",
+        json={"user_id": user_id, "skill_id": skill_id},
         headers=HEADERS,
     )
 
@@ -130,7 +176,7 @@ def grant_skill(skill_name: str, user_id: int):
         print(f"✅ 授权成功!")
         return True
     else:
-        print(f"❌ 失败: {response.status_code} - {response.text}")
+        print(f"❌ 授权失败: {response.status_code} - {response.text}")
         return False
 
 
@@ -186,9 +232,9 @@ def main():
         print(f"   请确认 OpenCode skill-auditor 路径正确")
         return
 
-    # 方式1: 上传单个 SKILL.md（推荐）
+    # 方式1: 上传单个 SKILL.md（使用 skill_name 参数指定名称）
     print(f"\n使用示例文件: {skill_md_file}")
-    result = upload_single_file(str(skill_md_file))
+    result = upload_single_file(str(skill_md_file), skill_name="skill-auditor")
 
     if result:
         # 授权给用户

@@ -8,7 +8,7 @@ class TestCreateSkill:
     """Tests for POST /api/v1/skills endpoint."""
 
     def test_create_skill_success(self, client, admin_auth_headers, mock_get_db):
-        """Test successfully creating a new skill."""
+        """Test successfully creating a new skill via JSON."""
         conn, cursor = mock_get_db
 
         skill_data = {
@@ -46,12 +46,11 @@ class TestCreateSkill:
                     new=AsyncMock(return_value=mock_user),
                 ):
                     with patch("pathlib.Path.mkdir", new_callable=lambda: MagicMock()):
-                        with patch("builtins.open", MagicMock()):
-                            response = client.post(
-                                "/api/v1/skills",
-                                json=skill_data,
-                                headers=admin_auth_headers,
-                            )
+                        response = client.post(
+                            "/api/v1/skills/json",
+                            json=skill_data,
+                            headers=admin_auth_headers,
+                        )
 
         assert response.status_code == 201
         assert response.json()["name"] == "new_skill"
@@ -79,11 +78,10 @@ class TestCreateSkill:
                 new=AsyncMock(return_value=mock_user),
             ):
                 response = client.post(
-                    "/api/v1/skills",
+                    "/api/v1/skills/json",
                     json={
                         "name": "test_skill",
                         "description": "Duplicate skill",
-                        "content": "Content",
                     },
                     headers=admin_auth_headers,
                 )

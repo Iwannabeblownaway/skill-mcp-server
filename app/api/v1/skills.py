@@ -1,6 +1,7 @@
 """Skill management API endpoints."""
 
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from fastapi.responses import FileResponse
@@ -17,254 +18,6 @@ from app.db.session import get_db
 from app.models.skill import SkillCreate, SkillUpdate, SkillResponse
 
 router = APIRouter(prefix="/skills", tags=["skills"])
-
-
-@router.get(
-    "",
-    summary="List all skills",
-)
-async def list_skills(
-    admin: dict = Depends(verify_admin_api_key),
-) -> dict:
-    """List all skills (metadata only, no content)."""
-    async with get_db() as conn:
-        skills = await skill_crud.list_all(conn)
-
-    return {
-        "skills": skills,
-        "total": len(skills),
-    }
-
-
-@router.post(
-    "",
-    response_model=SkillResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create a new skill",
-)
-async def create_new_skill(
-    skill_data: SkillCreate,
-    admin: dict = Depends(verify_admin_api_key),
-) -> SkillResponse:
-    """Create a new skill.
-
-    Creates:
-    1. Database record with skill metadata
-    2. Skill folder with SKILL.md template
-    """
-    async with get_db() as conn:
-        existing = await skill_crud.get_by_name(conn, skill_data.name)
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Skill '{skill_data.name}' already exists",
-            )
-
-        # Use skill name as path if not provided
-        skill_path = skill_data.name
-
-        # Create skill folder and SKILL.md template
-        skill_dir = SKILLS_DIR / skill_path
-        skill_file = skill_dir / "SKILL.md"
-        readme_file = skill_dir / "README.md"
-
-        skill_dir.mkdir(parents=True, exist_ok=True)
-
-        # Create SKILL.md with template
-        if not skill_file.exists():
-            skill_file.write_text(
-                f"# {skill_data.name}\n\n"
-                f"## Description\n{skill_data.description}\n\n"
-                f"## Usage\n\nDescribe how to use this skill...\n\n"
-                f"## Examples\n\n```\nExample usage here...\n```\n",
-                encoding="utf-8",
-            )
-
-        # Create README.md
-        if not readme_file.exists():
-            readme_file.write_text(
-                f"# {skill_data.name}\n\n{skill_data.description}\n",
-                encoding="utf-8",
-            )
-
-        # Create database record
-        skill = await skill_crud.create(
-            conn,
-            name=skill_data.name,
-            description=skill_data.description,
-            path=skill_path,
-            version=skill_data.version or "1.0",
-        )
-
-    return SkillResponse(**skill)
-
-
-@router.put(
-    "/{name}",
-    response_model=SkillResponse,
-    summary="Update a skill",
-)
-async def update_existing_skill(
-    name: str,
-    skill_data: SkillUpdate,
-    admin: dict = Depends(verify_admin_api_key),
-) -> SkillResponse:
-    """Update skill metadata (not content)."""
-    async with get_db() as conn:
-        skill = await skill_crud.update(
-            conn,
-            name=name,
-            description=skill_data.description,
-            version=skill_data.version,
-        )
-
-    if skill is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Skill '{name}' not found",
-        )
-
-    return SkillResponse(**skill)
-
-
-@router.delete(
-    "/{name}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a skill",
-)
-async def delete_existing_skill(
-    name: str,
-    admin: dict = Depends(verify_admin_api_key),
-) -> None:
-    """Delete a skill (database record only, not filesystem)."""
-    async with get_db() as conn:
-        deleted = await skill_crud.delete(conn, name)
-
-    if not deleted:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Skill '{name}' not found",
-        )
-
-
-@router.get(
-    "/{name}/content",
-    summary="Get skill content",
-)
-async def get_skill_content(
-    name: str,
-    admin: dict = Depends(verify_admin_api_key),
-) -> dict:
-    """Get skill content from filesystem.
-
-    Returns the SKILL.md content for the specified skill.
-    """
-    async with get_db() as conn:
-        skill = await skill_crud.get_by_name(conn, name)
-
-    if skill is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Skill '{name}' not found",
-        )
-
-    content = load_skill_content(skill["path"])
-    if content is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"SKILL.md not found for skill '{name}'",
-        )
-
-    return {
-        "name": name,
-        "path": skill["path"],
-        "content": content,
-    }
-
-
-class SkillContentUpdate(BaseModel):
-    """Request model for updating skill content."""
-
-    content: str
-
-
-@router.put(
-    "/{name}/content",
-    summary="Update skill content",
-)
-async def update_skill_content(
-    name: str,
-    content_data: SkillContentUpdate,
-    admin: dict = Depends(verify_admin_api_key),
-) -> dict:
-    """Update skill SKILL.md content via API.
-
-    Use this to upload or update the skill's SKILL.md content.
-    """
-    async with get_db() as conn:
-        skill = await skill_crud.get_by_name(conn, name)
-
-    if skill is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Skill '{name}' not found",
-        )
-
-    # Write content to filesystem
-    skill_file = skill_crud.get_skill_content_path(skill["path"])
-    skill_file.parent.mkdir(parents=True, exist_ok=True)
-    skill_file.write_text(content_data.content, encoding="utf-8")
-
-    return {
-        "name": name,
-        "path": skill["path"],
-        "content_length": len(content_data.content),
-        "message": "Content updated successfully",
-    }
-
-
-@router.post(
-    "/{name}/files",
-    status_code=status.HTTP_201_CREATED,
-    summary="Upload skill file",
-)
-async def upload_skill_file(
-    name: str,
-    filename: str,
-    file: UploadFile = File(...),
-    admin: dict = Depends(verify_admin_api_key),
-) -> dict:
-    """Upload a file to skill folder.
-
-    Args:
-        name: Skill name
-        filename: Target filename (e.g., 'README.md', 'script.py')
-        file: File content (multipart/form-data)
-    """
-    async with get_db() as conn:
-        skill = await skill_crud.get_by_name(conn, name)
-
-    if skill is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Skill '{name}' not found",
-        )
-
-    # Ensure skill folder exists
-    skill_dir = SKILLS_DIR / skill["path"]
-    skill_dir.mkdir(parents=True, exist_ok=True)
-
-    # Write file
-    file_path = skill_dir / filename
-    content = await file.read()
-    file_path.write_bytes(content)
-
-    return {
-        "name": name,
-        "filename": filename,
-        "size": len(content),
-        "path": str(file_path.relative_to(SKILLS_DIR)),
-    }
 
 
 def _extract_archive(content: bytes, skill_dir: Path) -> list[str]:
@@ -338,6 +91,229 @@ def _extract_archive(content: bytes, skill_dir: Path) -> list[str]:
     return extracted_files
 
 
+# ==================== List ====================
+
+
+@router.get(
+    "",
+    summary="List all skills",
+)
+async def list_skills(
+    admin: dict = Depends(verify_admin_api_key),
+) -> dict:
+    """List all skills (metadata only, no content)."""
+    async with get_db() as conn:
+        skills = await skill_crud.list_all(conn)
+
+    return {
+        "skills": skills,
+        "total": len(skills),
+    }
+
+
+# ==================== Create ====================
+
+
+@router.post(
+    "",
+    response_model=SkillResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new skill from file",
+)
+async def create_skill_from_file(
+    file: UploadFile = File(...),
+    admin: dict = Depends(verify_admin_api_key),
+) -> SkillResponse:
+    """Create a new skill from file upload.
+
+    Filename becomes skill name.
+    - Single file: saved as SKILL.md in skills/{name}/
+    - Archive (.zip, .tar.gz, etc.): extracted to skills/{name}/
+    """
+    filename = file.filename or "unknown"
+
+    # Extract skill name from filename (remove extension)
+    skill_name = filename
+    archive_exts = (".skill", ".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz")
+    for ext in archive_exts:
+        if filename.lower().endswith(ext):
+            skill_name = filename[: -len(ext)]
+            break
+    # Remove any remaining extension
+    if "." in skill_name:
+        skill_name = skill_name.rsplit(".", 1)[0]
+    # Sanitize
+    skill_name = re.sub(r"[^a-zA-Z0-9_-]", "_", skill_name)
+    description = f"Skill uploaded from {filename}"
+
+    content = await file.read()
+    is_archive = (
+        zipfile.is_zipfile(io.BytesIO(content))
+        or tarfile.is_tarfile(io.BytesIO(content))
+        or filename.lower().endswith(archive_exts)
+    )
+
+    async with get_db() as conn:
+        existing = await skill_crud.get_by_name(conn, skill_name)
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Skill '{skill_name}' already exists",
+            )
+
+        skill_dir = SKILLS_DIR / skill_name
+        skill_dir.mkdir(parents=True, exist_ok=True)
+
+        if is_archive:
+            _extract_archive(content, skill_dir)
+        else:
+            # Single file: save as SKILL.md
+            (skill_dir / "SKILL.md").write_bytes(content)
+
+        # Create database record
+        skill = await skill_crud.create(
+            conn,
+            name=skill_name,
+            description=description,
+            path=skill_name,
+            version="1.0",
+        )
+
+    return SkillResponse(**skill)
+
+
+@router.post(
+    "/json",
+    response_model=SkillResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new skill from JSON",
+)
+async def create_skill_from_json(
+    skill_data: SkillCreate,
+    admin: dict = Depends(verify_admin_api_key),
+) -> SkillResponse:
+    """Create a new skill from JSON body.
+
+    Creates:
+    1. Database record with skill metadata
+    2. Skill folder with SKILL.md template
+    """
+    async with get_db() as conn:
+        existing = await skill_crud.get_by_name(conn, skill_data.name)
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Skill '{skill_data.name}' already exists",
+            )
+
+        # Create skill folder and SKILL.md template
+        skill_dir = SKILLS_DIR / skill_data.name
+        skill_file = skill_dir / "SKILL.md"
+        readme_file = skill_dir / "README.md"
+
+        skill_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create SKILL.md with template
+        if not skill_file.exists():
+            skill_file.write_text(
+                f"# {skill_data.name}\n\n"
+                f"## Description\n{skill_data.description}\n\n"
+                f"## Usage\n\nDescribe how to use this skill...\n\n"
+                f"## Examples\n\n```\nExample usage here...\n```\n",
+                encoding="utf-8",
+            )
+
+        # Create README.md
+        if not readme_file.exists():
+            readme_file.write_text(
+                f"# {skill_data.name}\n\n{skill_data.description}\n",
+                encoding="utf-8",
+            )
+
+        # Create database record
+        skill = await skill_crud.create(
+            conn,
+            name=skill_data.name,
+            description=skill_data.description,
+            path=skill_data.name,
+            version=skill_data.version or "1.0",
+        )
+
+    return SkillResponse(**skill)
+
+
+# ==================== Update ====================
+
+
+@router.put(
+    "/{name}",
+    response_model=SkillResponse,
+    summary="Update a skill",
+)
+async def update_existing_skill(
+    name: str,
+    skill_data: SkillUpdate,
+    admin: dict = Depends(verify_admin_api_key),
+) -> SkillResponse:
+    """Update skill metadata (not content)."""
+    async with get_db() as conn:
+        skill = await skill_crud.update(
+            conn,
+            name=name,
+            description=skill_data.description,
+            version=skill_data.version,
+        )
+
+    if skill is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Skill '{name}' not found",
+        )
+
+    return SkillResponse(**skill)
+
+
+class SkillContentUpdate(BaseModel):
+    """Request model for updating skill content."""
+
+    content: str
+
+
+@router.put(
+    "/{name}/content",
+    summary="Update skill content",
+)
+async def update_skill_content(
+    name: str,
+    content_data: SkillContentUpdate,
+    admin: dict = Depends(verify_admin_api_key),
+) -> dict:
+    """Update skill SKILL.md content via API.
+
+    Use this to upload or update the skill's SKILL.md content.
+    """
+    async with get_db() as conn:
+        skill = await skill_crud.get_by_name(conn, name)
+
+    if skill is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Skill '{name}' not found",
+        )
+
+    # Write content to filesystem
+    skill_file = skill_crud.get_skill_content_path(skill["path"])
+    skill_file.parent.mkdir(parents=True, exist_ok=True)
+    skill_file.write_text(content_data.content, encoding="utf-8")
+
+    return {
+        "name": name,
+        "path": skill["path"],
+        "content_length": len(content_data.content),
+        "message": "Content updated successfully",
+    }
+
+
 @router.post(
     "/{name}/upload",
     status_code=status.HTTP_201_CREATED,
@@ -348,9 +324,9 @@ async def upload_skill_content(
     file: UploadFile = File(...),
     admin: dict = Depends(verify_admin_api_key),
 ) -> dict:
-    """Upload skill content - supports single file or archive.
+    """Upload skill content to existing skill - supports single file or archive.
 
-    - Single SKILL.md: automatically wrapped into skills/{name}/SKILL.md
+    - Single SKILL.md: saved as skills/{name}/SKILL.md
     - Archive (.zip, .tar.gz, etc.): extracted to skills/{name}/
     """
     async with get_db() as conn:
@@ -369,24 +345,22 @@ async def upload_skill_content(
     skill_dir.mkdir(parents=True, exist_ok=True)
 
     # Detect if it's an archive
+    archive_exts = (
+        ".skill",
+        ".zip",
+        ".tar",
+        ".tar.gz",
+        ".tgz",
+        ".tar.bz2",
+        ".tar.xz",
+        ".gz",
+        ".bz2",
+        ".xz",
+    )
     is_archive = (
         zipfile.is_zipfile(io.BytesIO(content))
         or tarfile.is_tarfile(io.BytesIO(content))
-        or filename.endswith(
-            (
-                ".tar.gz",
-                ".tgz",
-                ".tar.bz2",
-                ".tar.xz",
-                ".gz",
-                ".bz2",
-                ".xz",
-                ".zip",
-                ".tar",
-                ".7z",
-                ".skill",
-            )
-        )
+        or filename.lower().endswith(archive_exts)
     )
 
     if is_archive:
@@ -404,83 +378,65 @@ async def upload_skill_content(
     }
 
 
-@router.post(
-    "",
-    response_model=SkillResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create skill from file or archive",
+# ==================== Delete ====================
+
+
+@router.delete(
+    "/{name}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a skill",
 )
-async def create_skill_from_file(
-    file: UploadFile = File(...),
+async def delete_existing_skill(
+    name: str,
     admin: dict = Depends(verify_admin_api_key),
-) -> SkillResponse:
-    """Create a new skill from upload.
-
-    Skill name derived from filename (without extension).
-    Supports: SKILL.md (wrapped in folder), .zip, .tar.gz, etc.
-    """
-    # Get skill name from filename
-    filename = file.filename or "unknown"
-    archive_extensions = (
-        ".skill",
-        ".zip",
-        ".tar",
-        ".tar.gz",
-        ".tgz",
-        ".tar.bz2",
-        ".tar.xz",
-    )
-
-    for ext in archive_extensions:
-        if filename.endswith(ext):
-            skill_name = filename[: -len(ext)]
-            break
-    else:
-        skill_name = filename
-
-    # Sanitize name
-    skill_name = re.sub(r"[^a-zA-Z0-9_-]", "_", skill_name)
-
-    # Read content
-    content = await file.read()
-
+) -> None:
+    """Delete a skill (database record only, not filesystem)."""
     async with get_db() as conn:
-        # Check if exists
-        existing = await skill_crud.get_by_name(conn, skill_name)
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Skill '{skill_name}' already exists",
-            )
+        deleted = await skill_crud.delete(conn, name)
 
-        skill_dir = SKILLS_DIR / skill_name
-        skill_dir.mkdir(parents=True, exist_ok=True)
-
-        # Check if it's an archive
-        is_archive = (
-            zipfile.is_zipfile(io.BytesIO(content))
-            or tarfile.is_tarfile(io.BytesIO(content))
-            or filename.endswith(archive_extensions)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Skill '{name}' not found",
         )
 
-        if is_archive:
-            _extract_archive(content, skill_dir)
-            description = "Skill uploaded from archive"
-        else:
-            # Single file: wrap as SKILL.md
-            (skill_dir / "SKILL.md").write_bytes(content)
-            description = "Skill uploaded from file"
 
-        # Create database record
-        skill = await skill_crud.create(
-            conn,
-            name=skill_name,
-            description=description,
-            path=skill_name,
-            version="1.0",
+# ==================== Read ====================
+
+
+@router.get(
+    "/{name}/content",
+    summary="Get skill content",
+)
+async def get_skill_content(
+    name: str,
+    admin: dict = Depends(verify_admin_api_key),
+) -> dict:
+    """Get skill content from filesystem.
+
+    Returns the SKILL.md content for the specified skill.
+    """
+    async with get_db() as conn:
+        skill = await skill_crud.get_by_name(conn, name)
+
+    if skill is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Skill '{name}' not found",
         )
 
-    return SkillResponse(**skill)
+    content = load_skill_content(skill["path"])
+    if content is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"SKILL.md not found for skill '{name}'",
+        )
+
+    return {
+        "name": name,
+        "path": skill["path"],
+        "content": content,
+    }
 
 
 @router.get(
