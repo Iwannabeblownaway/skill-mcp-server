@@ -1,7 +1,7 @@
 """Tests for skills API endpoints."""
 
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestCreateSkill:
@@ -14,7 +14,6 @@ class TestCreateSkill:
         skill_data = {
             "name": "new_skill",
             "description": "A new test skill",
-            "content": "# New Skill\n\nContent here.",
             "version": "1.0",
         }
 
@@ -33,7 +32,10 @@ class TestCreateSkill:
                 new=AsyncMock(
                     return_value={
                         "id": 1,
-                        **skill_data,
+                        "name": "new_skill",
+                        "description": "A new test skill",
+                        "path": "new_skill",
+                        "version": "1.0",
                         "created_at": "2024-01-01T00:00:00",
                         "updated_at": "2024-01-01T00:00:00",
                     }
@@ -43,11 +45,13 @@ class TestCreateSkill:
                     "app.api.deps.user_crud.get_by_api_key",
                     new=AsyncMock(return_value=mock_user),
                 ):
-                    response = client.post(
-                        "/api/v1/skills",
-                        json=skill_data,
-                        headers=admin_auth_headers,
-                    )
+                    with patch("pathlib.Path.mkdir", new_callable=lambda: MagicMock()):
+                        with patch("builtins.open", MagicMock()):
+                            response = client.post(
+                                "/api/v1/skills",
+                                json=skill_data,
+                                headers=admin_auth_headers,
+                            )
 
         assert response.status_code == 201
         assert response.json()["name"] == "new_skill"
@@ -173,7 +177,7 @@ class TestUpdateSkill:
             "id": 1,
             "name": "test_skill",
             "description": "Updated description",
-            "content": "Updated content",
+            "path": "test_skill",
             "version": "1.1",
             "created_at": "2024-01-01T00:00:00",
             "updated_at": "2024-01-02T00:00:00",
@@ -263,7 +267,7 @@ class TestUpdateSkill:
             "id": 1,
             "name": "test_skill",
             "description": "Only description updated",
-            "content": "Original content",
+            "path": "test_skill",
             "version": "1.0",
             "created_at": "2024-01-01T00:00:00",
             "updated_at": "2024-01-02T00:00:00",

@@ -49,6 +49,7 @@ async def get_skill_content(
         Tuple of (content, error). If successful, error is None.
         If skill not found, error = "Skill not found".
         If no permission, error = "Permission denied".
+        If file not found, error = "Skill file not found".
     """
     async with get_db() as conn:
         # Check if skill exists
@@ -61,7 +62,12 @@ async def get_skill_content(
         if not has_perm:
             return None, "Permission denied"
 
-        return sk["content"], None
+        # Load content from filesystem
+        content = skill_crud.load_skill_content(sk["path"])
+        if content is None:
+            return None, "Skill file not found"
+
+        return content, None
 
 
 async def log_call(

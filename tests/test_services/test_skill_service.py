@@ -1,7 +1,7 @@
 """Tests for skill_service module."""
 
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services import skill_service
 
@@ -120,6 +120,8 @@ class TestGetSkillContent:
         """Test successfully retrieving skill content with permission."""
         conn, cursor = mock_get_db
 
+        expected_content = "# Test Skill\n\nThis is a test skill content."
+
         with patch(
             "app.services.skill_service.skill_crud.get_by_name",
             new=AsyncMock(return_value=sample_skill),
@@ -128,12 +130,16 @@ class TestGetSkillContent:
                 "app.services.skill_service.user_skill_crud.has_skill",
                 new=AsyncMock(return_value=True),
             ):
-                content, error = await skill_service.get_skill_content(
-                    user_id=1, skill_name="test_skill"
-                )
+                with patch(
+                    "app.services.skill_service.skill_crud.load_skill_content",
+                    new=MagicMock(return_value=expected_content),
+                ):
+                    content, error = await skill_service.get_skill_content(
+                        user_id=1, skill_name="test_skill"
+                    )
 
         assert error is None
-        assert content == sample_skill["content"]
+        assert content == expected_content
 
     @pytest.mark.asyncio
     async def test_get_skill_content_not_found(self, mock_get_db):
@@ -179,7 +185,7 @@ class TestGetSkillContent:
             "id": 1,
             "name": "empty_skill",
             "description": "Empty skill",
-            "content": "",
+            "path": "empty_skill",
             "version": "1.0",
         }
 
@@ -191,9 +197,13 @@ class TestGetSkillContent:
                 "app.services.skill_service.user_skill_crud.has_skill",
                 new=AsyncMock(return_value=True),
             ):
-                content, error = await skill_service.get_skill_content(
-                    user_id=1, skill_name="empty_skill"
-                )
+                with patch(
+                    "app.services.skill_service.skill_crud.load_skill_content",
+                    new=MagicMock(return_value=""),
+                ):
+                    content, error = await skill_service.get_skill_content(
+                        user_id=1, skill_name="empty_skill"
+                    )
 
         assert error is None
         assert content == ""

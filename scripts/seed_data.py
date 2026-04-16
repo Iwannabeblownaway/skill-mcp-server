@@ -86,50 +86,34 @@ def create_admin_user(conn, api_key_length: int = 32) -> dict:
 
 
 def create_sample_skills(conn, admin_user_id: int) -> list:
-    """Create sample skills for demonstration."""
+    """Create sample skills for demonstration (metadata only).
+
+    Note: Skill content is stored in filesystem (skills/ folder).
+    This function only creates database records.
+    """
+    from pathlib import Path
+
+    # Skills that exist in filesystem
     sample_skills = [
         {
             "name": "code-review",
             "description": "Perform comprehensive code review including style, logic, and best practices.",
-            "content": """# Code Review Skill
-
-When reviewing code, follow these steps:
-
-1. **Style Check**: Verify code follows project conventions
-2. **Logic Review**: Check for bugs, edge cases, and correctness
-3. **Best Practices**: Ensure modern patterns and efficiency
-4. **Documentation**: Check for appropriate comments and docstrings
-
-Provide constructive feedback with specific suggestions.""",
+            "path": "code-review",
         },
         {
             "name": "data-analysis",
             "description": "Analyze datasets and generate summary statistics and visualizations.",
-            "content": """# Data Analysis Skill
-
-When analyzing data:
-
-1. **Load Data**: Use pandas to read the data file
-2. **Profile**: Generate descriptive statistics (mean, median, std, etc.)
-3. **Visualize**: Create relevant plots (histograms, scatter plots, etc.)
-4. **Summarize**: Provide insights and recommendations
-
-Always check for missing values and data quality issues.""",
+            "path": "data-analysis",
         },
         {
             "name": "api-design",
             "description": "Design RESTful APIs with proper HTTP methods, status codes, and documentation.",
-            "content": """# API Design Skill
-
-When designing APIs:
-
-1. **Resources**: Identify nouns (users, orders, products)
-2. **HTTP Methods**: Use GET, POST, PUT, DELETE appropriately
-3. **Status Codes**: Return correct HTTP status codes
-4. **Versioning**: Include API version in URL or headers
-5. **Documentation**: Document endpoints, parameters, and responses
-
-Follow REST principles and keep endpoints consistent.""",
+            "path": "api-design",
+        },
+        {
+            "name": "hello",
+            "description": "A simple test skill for development and verification.",
+            "path": "hello",
         },
     ]
 
@@ -143,16 +127,16 @@ Follow REST principles and keep endpoints consistent.""",
                 print(f"Skill '{skill['name']}' already exists, skipping...")
                 continue
 
-            # Create skill
+            # Create skill metadata record
             cursor.execute(
                 """
-                INSERT INTO skills (name, description, content, version, created_at, updated_at)
+                INSERT INTO skills (name, description, path, version, created_at, updated_at)
                 VALUES (%s, %s, %s, '1.0', %s, %s)
                 """,
                 (
                     skill["name"],
                     skill["description"],
-                    skill["content"],
+                    skill["path"],
                     datetime.now(),
                     datetime.now(),
                 ),
@@ -173,7 +157,7 @@ Follow REST principles and keep endpoints consistent.""",
             conn.commit()
 
             created_skills.append(skill["name"])
-            print(f"Created skill: {skill['name']}")
+            print(f"Created skill record: {skill['name']} -> {skill['path']}/")
 
     return created_skills
 

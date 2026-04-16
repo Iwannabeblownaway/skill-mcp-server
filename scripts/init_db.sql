@@ -13,15 +13,16 @@ CREATE TABLE IF NOT EXISTS users (
     INDEX idx_external_id (external_id)
 );
 
--- Skills table: stores skill definitions
+-- Skills table: stores skill metadata (content stored in filesystem)
 CREATE TABLE IF NOT EXISTS skills (
     id INT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(100) UNIQUE NOT NULL,
     description TEXT NOT NULL,
-    content TEXT NOT NULL,
+    path VARCHAR(500) NOT NULL,  -- Relative path to skill folder (e.g., "code-review")
     version VARCHAR(20) DEFAULT '1.0',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_name (name)
 );
 
 -- User-skills junction table: maps which users have access to which skills

@@ -11,16 +11,16 @@ class SkillCreate(BaseModel):
 
     name: str = Field(..., description="Unique skill name")
     description: str = Field(..., description="Skill description")
-    content: str = Field(..., description="Skill content (markdown)")
     version: Optional[str] = Field("1.0", description="Skill version")
+    # Skill content is stored in filesystem, not in database
 
 
 class SkillUpdate(BaseModel):
     """Model for updating an existing skill."""
 
     description: Optional[str] = Field(None, description="Skill description")
-    content: Optional[str] = Field(None, description="Skill content")
     version: Optional[str] = Field(None, description="Skill version")
+    # Content updates go to filesystem directly
 
 
 class SkillResponse(BaseModel):
@@ -29,7 +29,7 @@ class SkillResponse(BaseModel):
     id: int
     name: str
     description: str
-    content: Optional[str] = None
+    path: str  # Relative path to skill folder
     version: str
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
