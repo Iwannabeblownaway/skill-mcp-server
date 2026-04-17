@@ -55,17 +55,23 @@ async def get_user_skills(conn: aiomysql.Connection, user_id: int) -> list[dict]
     Returns:
         List of skill dicts (id, name, description, path)
     """
+    import json
+
     async with conn.cursor(aiomysql.DictCursor) as cur:
         await cur.execute(
             """SELECT s.id, s.name, s.description, s.path, s.version,
-                      s.created_at, s.updated_at
+                      s.created_at, s.updated_at, s.dependencies
                FROM skills s
                INNER JOIN user_skills us ON s.id = us.skill_id
                WHERE us.user_id = %s
                ORDER BY s.name""",
             (user_id,),
         )
-        return await cur.fetchall()
+        rows = await cur.fetchall()
+        for row in rows:
+            if row.get("dependencies"):
+                row["dependencies"] = json.loads(row["dependencies"])
+        return rows
 
 
 async def has_skill(conn: aiomysql.Connection, user_id: int, skill_name: str) -> bool:

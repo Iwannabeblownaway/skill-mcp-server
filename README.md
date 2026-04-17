@@ -122,19 +122,17 @@ python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ### tools/call
 
-调用指定技能获取内容。
+调用指定技能获取内容（通过 `get_skill_index` + `get_skill_file` 获取单个文件，或 `get_skill_{name}` 获取完整内容）。
 
 **输入**:
 ```json
 {
-  "name": "use_skill_code-review",
-  "arguments": {
-    "skill_name": "code-review"
-  }
+  "name": "get_skill_code-review",
+  "arguments": {}
 }
 ```
 
-**输出**: Skill 内容 (Markdown 格式)
+**输出**: Skill 内容 (JSON 格式)
 
 ### get_skill_index
 
@@ -172,48 +170,6 @@ python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```bash
 # 单元测试（需要服务运行）
 python -m pytest tests/ -v
-```
-
-> 注：集成测试已移除。请使用 MCP 客户端直接测试。
-
-## 项目结构
-
-```
-skill-mcp-server/
-├── app/
-│   ├── main.py              # FastAPI 应用入口
-│   ├── config.py             # 配置管理
-│   ├── api/v1/              # REST API
-│   │   ├── users.py         # 用户管理
-│   │   ├── skills.py         # 技能管理
-│   │   ├── auth.py           # 授权管理
-│   │   └── logs.py           # 日志查询
-│   ├── mcp/
-│   │   ├── server.py         # MCP 服务端实现
-│   │   ├── handlers.py        # MCP 工具处理
-│   │   └── session.py         # 会话管理
-│   ├── services/             # 业务逻辑
-│   │   ├── skill_service.py
-│   │   └── user_service.py
-│   ├── db/
-│   │   ├── session.py        # 数据库连接池
-│   │   └── crud/            # CRUD 操作
-│   │       ├── user.py
-│   │       ├── skill.py
-│   │       ├── user_skill.py
-│   │       └── call_log.py
-│   └── models/              # Pydantic 模型
-│       ├── user.py
-│       └── skill.py
-├── tests/                   # 单元测试
-├── scripts/                 # 辅助脚本
-│   └── seed_data.py         # 初始化数据
-├── skills/                  # 技能内容目录
-│   ├── code-review/
-│   ├── data-analysis/
-│   └── ...
-├── examples/                # 示例脚本
-└── docs/                    # 文档
 ```
 
 ## 技术栈

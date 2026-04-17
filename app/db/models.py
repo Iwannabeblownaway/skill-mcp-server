@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS users (
     id INT PRIMARY KEY AUTO_INCREMENT,
     user_id VARCHAR(100) UNIQUE NOT NULL,
     username VARCHAR(100) NOT NULL,
-    api_key VARCHAR(64) UNIQUE NOT NULL,
+    api_key VARCHAR(128) UNIQUE NOT NULL,
     role ENUM('admin', 'user') DEFAULT 'user',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_api_key (api_key),
@@ -114,6 +114,8 @@ CREATE TABLE IF NOT EXISTS skills (
     description TEXT NOT NULL,
     path VARCHAR(500) NOT NULL,  -- Relative path to skill folder
     version VARCHAR(20) DEFAULT '1.0',
+    dependencies JSON,
+    content_json JSON,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_name (name)

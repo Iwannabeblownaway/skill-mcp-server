@@ -222,6 +222,179 @@ async def list_tools() -> list[MCPTool]:
         raise  # Re-raise so MCP framework returns error response to client
 
 
+async def _get_skill_dependencies(skill_name: str) -> list[str]:
+    """Fetch dependencies for a skill from the database."""
+    from app.db.session import get_db
+    from app.db.crud import skill as skill_crud
+
+    try:
+        async with get_db() as conn:
+            sk = await skill_crud.get_by_name(conn, skill_name)
+            return sk.get("dependencies", []) if sk else []
+    except Exception:
+        return []
+
+
+# Client detection patterns for MCP config paths
+MCP_CONFIG_PATTERNS = {
+    "opencode": {
+        "files": [
+            "~/.opencode.json",
+            "~/.config/opencode/opencode.json",
+            "%USERPROFILE%/.opencode.json",
+            "%LOCALAPPDATA%/opencode/.opencode.json",
+            ".opencode.json",
+            "~/.config/opencode/mcp/*.json",
+            ".opencode/mcp/*.json",
+            "~/.claude/.mcp.json",
+            ".mcp.json",
+        ],
+        "search_key": "mcp",
+        "format": "JSON",
+        "cli_check": "opencode mcp list",
+    },
+    "claude-code": {
+        "files": [
+            "~/.claude.json",  # NOTE: outside ~/.claude/ directory!
+            ".mcp.json",
+            "~/.claude/settings.json",
+        ],
+        "search_key": "mcpServers",
+        "format": "JSON",
+        "cli_check": "claude mcp list",
+    },
+    "claude-desktop": {
+        "files": [
+            "~/Library/Application Support/Claude/claude_desktop_config.json",
+            "%APPDATA%/Claude/claude_desktop_config.json",
+            "~/.config/Claude/claude_desktop_config.json",
+        ],
+        "search_key": "mcpServers",
+        "format": "JSON",
+        "cli_check": None,
+    },
+    "openclaw": {
+        "files": [
+            "~/.openclaw/openclaw.json",
+        ],
+        "search_key": "mcpServers",
+        "format": "JSON",
+        "cli_check": "openclaw mcp list",
+    },
+    "cursor": {
+        "files": [
+            "~/.cursor/mcp.json",
+            ".cursor/mcp.json",
+        ],
+        "search_key": "mcpServers",
+        "format": "JSON",
+        "cli_check": None,
+    },
+    "codex": {
+        "files": [
+            "~/.codex/config.toml",
+        ],
+        "search_key": "mcp_servers",
+        "format": "TOML",
+        "cli_check": None,
+    },
+    "cline": {
+        "files": [
+            "~/.cline/mcp_settings.json",
+        ],
+        "search_key": "mcpServers",
+        "format": "JSON",
+        "cli_check": None,
+    },
+    "continue": {
+        "files": [
+            "~/.continue/config.json",
+        ],
+        "search_key": "mcpServers",
+        "format": "JSON (array)",
+        "cli_check": None,
+    },
+}
+
+
+def _build_config_check_instructions(deps: list[str]) -> str:
+    """Build detailed MCP config check instructions for AI clients."""
+
+    instructions = [
+        "\n\n[MCP Requirements] This skill requires the following MCP services: "
+        + ", ".join(deps)
+        + ".\n",
+        "=" * 60,
+        "HOW TO CHECK AND CONFIGURE MCP DEPENDENCIES",
+        "=" * 60,
+        "\n## Step 1: Search for MCP Config Files\n",
+        "Search the following locations for MCP configuration files:\n",
+    ]
+
+    # Collect all unique file patterns
+    all_files = set()
+    for client_info in MCP_CONFIG_PATTERNS.values():
+        all_files.update(client_info["files"])
+
+    # Group by directory for readability
+    for pattern in sorted(all_files):
+        instructions.append(f"  - `{pattern}`")
+
+    instructions.extend(
+        [
+            "\n## Step 2: Parse MCP Configuration\n",
+            "Read any found config file and look for:\n",
+            "  - `mcp` or `mcpServers` or `mcp_servers` field\n",
+            "  - Remote MCP URLs (http/https)\n",
+            "  - Local MCP commands (npx, python, node)\n",
+        ]
+    )
+
+    instructions.append("\n## Step 3: Client-Specific Config Locations\n")
+
+    for client_name, info in MCP_CONFIG_PATTERNS.items():
+        instructions.append(f"\n### {client_name.upper()}")
+        instructions.append(f"  Config file(s):")
+        for f in info["files"]:
+            instructions.append(f"    - `{f}`")
+        instructions.append(f"  Format: {info['format']}")
+        instructions.append(f"  Search key: `{info['search_key']}`")
+        if info["cli_check"]:
+            instructions.append(f"  CLI check: `{info['cli_check']}`")
+
+    instructions.extend(
+        [
+            "\n## Step 4: Example Remote MCP Config\n",
+            "For a remote HTTP MCP server (like Sorftime), add this to your config:\n",
+            "```json\n",
+            "{\n",
+            '  "mcpServers": {\n',
+            '    "sorftime": {\n',
+            '      "type": "remote",\n',
+            '      "url": "https://mcp.sorftime.com",\n',
+            '      "headers": {\n',
+            '        "Authorization": "Bearer YOUR_API_KEY"\n',
+            "      }\n",
+            "    }\n",
+            "  }\n",
+            "}\n",
+            "```\n",
+            "\n## Step 5: Verify Configuration\n",
+            "After adding the MCP config, verify by checking if the required tools are available.\n",
+        ]
+    )
+
+    return "\n".join(instructions)
+
+
+def _append_deps_warning(skill_name: str, deps: list[str], content: str) -> str:
+    """Prepend MCP dependencies warning with detailed config instructions."""
+    if not deps:
+        return content
+    warning = _build_config_check_instructions(deps)
+    return warning + content
+
+
 @mcp_server.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Handle tools/call MCP method.
@@ -259,8 +432,10 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             )
             if error:
                 return [TextContent(type="text", text=f"Error: {error}")]
+            deps = await _get_skill_dependencies(skill_name)
             json_str = json.dumps(index_data, ensure_ascii=False, indent=2)
-            return [TextContent(type="text", text=json_str)]
+            result = _append_deps_warning(skill_name, deps, json_str)
+            return [TextContent(type="text", text=result)]
         except Exception as e:
             logger.error(f"Error calling get_skill_index: {e}")
             return [TextContent(type="text", text=f"Error: {str(e)}")]
@@ -278,7 +453,9 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             )
             if error:
                 return [TextContent(type="text", text=f"Error: {error}")]
-            return [TextContent(type="text", text=content)]
+            deps = await _get_skill_dependencies(skill_name)
+            result = _append_deps_warning(skill_name, deps, content)
+            return [TextContent(type="text", text=result)]
         except Exception as e:
             logger.error(f"Error calling get_skill_file: {e}")
             return [TextContent(type="text", text=f"Error: {str(e)}")]
@@ -301,8 +478,10 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             )
             if error:
                 return [TextContent(type="text", text=f"Error: {error}")]
+            deps = await _get_skill_dependencies(skill_name)
             json_str = json.dumps(content_json, ensure_ascii=False, indent=2)
-            return [TextContent(type="text", text=json_str)]
+            result = _append_deps_warning(skill_name, deps, json_str)
+            return [TextContent(type="text", text=result)]
         except Exception as e:
             logger.error(f"Error calling tool {name}: {e}")
             return [TextContent(type="text", text=f"Error: {str(e)}")]

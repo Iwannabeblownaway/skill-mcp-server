@@ -604,7 +604,7 @@ async def get_skill_dependencies(
 async def download_skill_file(
     name: str,
     filename: str,
-    user: dict = Depends(get_current_user),
+    admin: dict = Depends(verify_admin_api_key),
 ) -> FileResponse:
     """Download a file from skill folder."""
     # Validate filename to prevent path traversal attacks
