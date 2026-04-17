@@ -60,9 +60,21 @@ async def handle_list_tools(session_id: str) -> list[Tool]:
     # Convert skills to MCP Tool objects
     tools = []
     for skill in skills:
+        description = skill.get("description", f"Execute the {skill['name']} skill")
+        dependencies = skill.get("dependencies", [])
+
+        # Add MCP requirements hint to description if skill has dependencies
+        if dependencies:
+            deps_hint = (
+                "\n\n[MCP Requirements] This skill requires the following MCP services: "
+                + ", ".join(dependencies)
+                + ". Please ensure these services are configured in your MCP client."
+            )
+            description = description + deps_hint
+
         tool = Tool(
             name=f"{SKILL_TOOL_PREFIX}{skill['name']}",
-            description=skill.get("description", f"Execute the {skill['name']} skill"),
+            description=description,
             inputSchema=SKILL_TOOL_INPUT_SCHEMA,
         )
         tools.append(tool)

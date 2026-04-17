@@ -12,6 +12,9 @@ class SkillCreate(BaseModel):
     name: str = Field(..., description="Unique skill name")
     description: str = Field(..., description="Skill description")
     version: Optional[str] = Field("1.0", description="Skill version")
+    mcp_config: Optional[dict] = Field(
+        None, description="MCP server configuration for dependencies"
+    )
     # Skill content is stored in filesystem, not in database
 
 
@@ -31,6 +34,7 @@ class SkillResponse(BaseModel):
     description: str
     path: str  # Relative path to skill folder
     version: str
+    dependencies: Optional[list[str]] = Field(default_factory=list)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

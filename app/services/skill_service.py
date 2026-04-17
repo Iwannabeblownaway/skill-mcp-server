@@ -1,12 +1,54 @@
 """Skill service - business logic for skill operations."""
 
 import json
-from typing import Optional
+from typing import Optional, Union
+from urllib.parse import urlparse
 
 from app.db.session import get_db
 from app.db.crud import skill as skill_crud
 from app.db.crud import user_skill as user_skill_crud
 from app.db.crud import call_log as call_log_crud
+
+
+def extract_urls_from_mcp_config(mcp_config: dict) -> list[str]:
+    """Extract base URLs from MCP config, removing all query parameters.
+
+    Handles two formats:
+    1. Remote HTTP servers: {"type": "http", "url": "https://..."}
+    2. Simple URL strings: {"server-name": "https://..."}
+
+    Args:
+        mcp_config: MCP configuration dict (e.g., {"filesystem": {...}, "git": {...}})
+
+    Returns:
+        List of base URLs with all query params stripped.
+        E.g., "http://localhost:8080/filesystem?key=xxx" -> "http://localhost:8080/filesystem"
+    """
+    urls = []
+
+    for key, value in mcp_config.items():
+        url = None
+
+        if isinstance(value, str):
+            # Simple URL string: {"filesystem": "http://localhost:8080"}
+            url = value
+        elif isinstance(value, dict):
+            # Object format: check for url field
+            url = value.get("url") or value.get("remote_url")
+            # Skip local servers (have command/args but no url)
+            if not url and "command" in value:
+                continue
+        else:
+            continue
+
+        if url:
+            # Strip all query parameters - keep only scheme://host/path
+            parsed = urlparse(url)
+            base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+            if base_url not in urls:
+                urls.append(base_url)
+
+    return urls
 
 
 async def get_user_skills(user_id: int) -> list[dict]:
@@ -16,11 +58,19 @@ async def get_user_skills(user_id: int) -> list[dict]:
         user_id: User ID
 
     Returns:
-        List of skill dicts with name and description
+        List of skill dicts with name, description, and dependencies
     """
     async with get_db() as conn:
         skills = await user_skill_crud.get_user_skills(conn, user_id)
-        return [{"name": s["name"], "description": s["description"]} for s in skills]
+        result = []
+        for s in skills:
+            skill_data = {
+                "name": s["name"],
+                "description": s.get("description", ""),
+                "dependencies": s.get("dependencies", []),
+            }
+            result.append(skill_data)
+        return result
 
 
 async def check_permission(user_id: int, skill_name: str) -> bool:

@@ -1,7 +1,8 @@
 """Skill management API endpoints."""
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, status
 from fastapi.responses import FileResponse
@@ -16,6 +17,7 @@ from app.db.crud import skill as skill_crud
 from app.db.crud.skill import SKILLS_DIR, load_skill_content
 from app.db.session import get_db
 from app.models.skill import SkillCreate, SkillUpdate, SkillResponse
+from app.services.skill_service import extract_urls_from_mcp_config
 
 router = APIRouter(prefix="/skills", tags=["skills"])
 
@@ -151,18 +153,32 @@ async def create_skill_from_file(
     description: str = Query(
         ..., description="Skill description for tool listing (required)"
     ),
+    mcp_config: Optional[str] = Query(
+        None,
+        description='JSON string of MCP server config (e.g., \'{"filesystem": {"url": "http://..."}}\')',
+    ),
     admin: dict = Depends(verify_admin_api_key),
 ) -> SkillResponse:
     """Create a new skill from file upload.
 
     - name: Skill name (required)
     - description: Skill description for tool listing (required)
+    - mcp_config: Optional JSON string of MCP server configuration
     - Single file: saved as SKILL.md in skills/{name}/
     - Archive (.zip, .tar.gz, etc.): extracted to skills/{name}/
     """
     skill_name = name
     # Sanitize
     skill_name = re.sub(r"[^a-zA-Z0-9_-]", "_", skill_name)
+
+    # Parse mcp_config to extract dependencies
+    dependencies = None
+    if mcp_config:
+        try:
+            config = json.loads(mcp_config)
+            dependencies = extract_urls_from_mcp_config(config)
+        except (json.JSONDecodeError, Exception):
+            pass  # Ignore invalid mcp_config
 
     content = await file.read()
     archive_exts = (
@@ -208,6 +224,7 @@ async def create_skill_from_file(
             description=description,
             path=skill_name,
             version="1.0",
+            dependencies=dependencies,
         )
 
     return SkillResponse(**skill)
@@ -228,7 +245,14 @@ async def create_skill_from_json(
     Creates:
     1. Database record with skill metadata
     2. Skill folder with SKILL.md template
+
+    Optionally accepts mcp_config for dependency declaration.
     """
+    # Extract dependencies from mcp_config if provided
+    dependencies = None
+    if skill_data.mcp_config:
+        dependencies = extract_urls_from_mcp_config(skill_data.mcp_config)
+
     async with get_db() as conn:
         existing = await skill_crud.get_by_name(conn, skill_data.name)
         if existing:
@@ -268,6 +292,7 @@ async def create_skill_from_json(
             description=skill_data.description,
             path=skill_data.name,
             version=skill_data.version or "1.0",
+            dependencies=dependencies,
         )
 
     return SkillResponse(**skill)
@@ -541,6 +566,35 @@ async def list_skill_files(
 
     files = [f.name for f in skill_dir.iterdir() if f.is_file()]
     return {"name": name, "files": files}
+
+
+@router.get(
+    "/{name}/dependencies",
+    summary="Get skill MCP dependencies",
+)
+async def get_skill_dependencies(
+    name: str,
+    admin: dict = Depends(verify_admin_api_key),
+) -> dict:
+    """Get MCP dependencies for a skill.
+
+    Returns the list of MCP service URLs (base URLs without auth params)
+    that this skill requires.
+    """
+    async with get_db() as conn:
+        skill = await skill_crud.get_by_name(conn, name)
+
+    if skill is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Skill '{name}' not found",
+        )
+
+    dependencies = skill.get("dependencies", [])
+    return {
+        "name": name,
+        "dependencies": dependencies,
+    }
 
 
 @router.get(

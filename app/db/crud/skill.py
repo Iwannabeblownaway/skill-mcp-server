@@ -29,6 +29,7 @@ async def create(
     description: str,
     path: str,
     version: str = "1.0",
+    dependencies: Optional[list] = None,
 ) -> dict:
     """Create a new skill metadata record.
 
@@ -38,14 +39,18 @@ async def create(
         description: Skill description
         path: Relative path to skill folder
         version: Skill version
+        dependencies: Optional list of MCP URL patterns this skill requires
 
     Returns:
         Created skill dict
     """
+    import json
+
+    deps_json = json.dumps(dependencies) if dependencies else None
     async with conn.cursor(aiomysql.DictCursor) as cur:
         await cur.execute(
-            "INSERT INTO skills (name, description, path, version) VALUES (%s, %s, %s, %s)",
-            (name, description, path, version),
+            "INSERT INTO skills (name, description, path, version, dependencies) VALUES (%s, %s, %s, %s, %s)",
+            (name, description, path, version, deps_json),
         )
         skill_id = cur.lastrowid
 
@@ -55,6 +60,7 @@ async def create(
             "description": description,
             "path": path,
             "version": version,
+            "dependencies": dependencies or [],
         }
 
 
@@ -63,6 +69,7 @@ async def update(
     name: str,
     description: str | None = None,
     version: str | None = None,
+    dependencies: list | None = None,
 ) -> Optional[dict]:
     """Update an existing skill metadata.
 
@@ -71,10 +78,13 @@ async def update(
         name: Skill name
         description: New description (if provided)
         version: New version (if provided)
+        dependencies: New MCP dependencies list (if provided)
 
     Returns:
         Updated skill dict or None if not found
     """
+    import json
+
     updates = []
     params = []
 
@@ -84,6 +94,9 @@ async def update(
     if version is not None:
         updates.append("version = %s")
         params.append(version)
+    if dependencies is not None:
+        updates.append("dependencies = %s")
+        params.append(json.dumps(dependencies))
 
     if not updates:
         return await get_by_name(conn, name)
@@ -141,12 +154,17 @@ async def get_by_name(conn: aiomysql.Connection, name: str) -> Optional[dict]:
     Returns:
         Skill dict (without content) or None if not found
     """
+    import json
+
     async with conn.cursor(aiomysql.DictCursor) as cur:
         await cur.execute(
-            "SELECT id, name, description, path, version, created_at, updated_at FROM skills WHERE name = %s",
+            "SELECT id, name, description, path, version, dependencies, created_at, updated_at FROM skills WHERE name = %s",
             (name,),
         )
-        return await cur.fetchone()
+        row = await cur.fetchone()
+        if row and row.get("dependencies"):
+            row["dependencies"] = json.loads(row["dependencies"])
+        return row
 
 
 async def get_by_id(conn: aiomysql.Connection, skill_id: int) -> Optional[dict]:
@@ -159,12 +177,17 @@ async def get_by_id(conn: aiomysql.Connection, skill_id: int) -> Optional[dict]:
     Returns:
         Skill dict (without content) or None if not found
     """
+    import json
+
     async with conn.cursor(aiomysql.DictCursor) as cur:
         await cur.execute(
-            "SELECT id, name, description, path, version, created_at, updated_at FROM skills WHERE id = %s",
+            "SELECT id, name, description, path, version, dependencies, created_at, updated_at FROM skills WHERE id = %s",
             (skill_id,),
         )
-        return await cur.fetchone()
+        row = await cur.fetchone()
+        if row and row.get("dependencies"):
+            row["dependencies"] = json.loads(row["dependencies"])
+        return row
 
 
 async def list_all(
@@ -180,12 +203,18 @@ async def list_all(
     Returns:
         List of skill dicts (without content)
     """
+    import json
+
     async with conn.cursor(aiomysql.DictCursor) as cur:
         await cur.execute(
-            "SELECT id, name, description, path, version, created_at, updated_at FROM skills ORDER BY id LIMIT %s OFFSET %s",
+            "SELECT id, name, description, path, version, dependencies, created_at, updated_at FROM skills ORDER BY id LIMIT %s OFFSET %s",
             (limit, offset),
         )
-        return await cur.fetchall()
+        rows = await cur.fetchall()
+        for row in rows:
+            if row.get("dependencies"):
+                row["dependencies"] = json.loads(row["dependencies"])
+        return rows
 
 
 async def get_by_ids(conn: aiomysql.Connection, skill_ids: list[int]) -> list[dict]:
@@ -198,15 +227,21 @@ async def get_by_ids(conn: aiomysql.Connection, skill_ids: list[int]) -> list[di
     Returns:
         List of skill dicts (without content)
     """
+    import json
+
     if not skill_ids:
         return []
     async with conn.cursor(aiomysql.DictCursor) as cur:
         format_ids = ",".join(["%s"] * len(skill_ids))
         await cur.execute(
-            f"SELECT id, name, description, path, version, created_at, updated_at FROM skills WHERE id IN ({format_ids}) ORDER BY id",
+            f"SELECT id, name, description, path, version, dependencies, created_at, updated_at FROM skills WHERE id IN ({format_ids}) ORDER BY id",
             tuple(skill_ids),
         )
-        return await cur.fetchall()
+        rows = await cur.fetchall()
+        for row in rows:
+            if row.get("dependencies"):
+                row["dependencies"] = json.loads(row["dependencies"])
+        return rows
 
 
 def load_skill_content(skill_path: str) -> Optional[str]:
