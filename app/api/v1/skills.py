@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import zipfile
@@ -11,7 +11,7 @@ import tarfile
 import io
 import re
 
-from app.api.deps import verify_admin_api_key
+from app.api.deps import verify_admin_api_key, get_current_user
 from app.db.crud import skill as skill_crud
 from app.db.crud.skill import SKILLS_DIR, load_skill_content
 from app.db.session import get_db
@@ -26,9 +26,40 @@ def _extract_archive(content: bytes, skill_dir: Path) -> list[str]:
     Supports: .zip, .tar, .tar.gz, .tgz, .tar.bz2, .tar.xz, .gz, .bz2, .xz
 
     Returns list of extracted filenames.
+    Raises HTTPException on path traversal attempts.
     """
     extracted_files = []
     skill_dir.mkdir(parents=True, exist_ok=True)
+    skill_dir_resolved = skill_dir.resolve()
+
+    def _safe_extract(filename: str, write_func) -> bool:
+        """Safely extract a file, validating path is within skill_dir.
+
+        Returns True if extracted, False if skipped.
+        Raises HTTPException on path traversal.
+        """
+        # Strip any path components - only allow filename
+        if "/" in filename:
+            filename = filename.split("/")[-1]
+        if "\\" in filename:
+            filename = filename.split("\\")[-1]
+
+        # Reject empty or hidden filenames
+        if not filename or filename.startswith("."):
+            return False
+
+        target_path = (skill_dir / filename).resolve()
+
+        # Path traversal check: ensure resolved path is within skill_dir
+        if not target_path.is_relative_to(skill_dir_resolved):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Path traversal detected: {filename}",
+            )
+
+        write_func(target_path)
+        extracted_files.append(filename)
+        return True
 
     # Try zip first
     if zipfile.is_zipfile(io.BytesIO(content)):
@@ -36,27 +67,24 @@ def _extract_archive(content: bytes, skill_dir: Path) -> list[str]:
             for file_info in zf.infolist():
                 if file_info.is_dir():
                     continue
-                filename = file_info.filename
-                if "/" in filename or "\\" in filename:
-                    filename = filename.split("/")[-1].split("\\")[-1]
-                if filename:
-                    (skill_dir / filename).write_bytes(zf.read(file_info.filename))
-                    extracted_files.append(filename)
+                _safe_extract(
+                    file_info.filename,
+                    lambda p: p.write_bytes(zf.read(file_info.filename)),
+                )
         return extracted_files
 
     # Try tar formats
     try:
         with tarfile.open(fileobj=io.BytesIO(content), mode="r:*") as tf:
             for member in tf.getmembers():
-                if member.isfile():
-                    filename = member.name
-                    if "/" in filename or "\\" in filename:
-                        filename = filename.split("/")[-1].split("\\")[-1]
-                    if filename:
-                        (skill_dir / filename).write_bytes(
-                            tf.extractfile(member).read()
-                        )
-                        extracted_files.append(filename)
+                if member.isfile() and member.name:
+                    extracted_content = tf.extractfile(member)
+                    if extracted_content is None:
+                        continue
+                    _safe_extract(
+                        member.name,
+                        lambda p, c=extracted_content.read(): p.write_bytes(c),
+                    )
             return extracted_files
     except tarfile.TarError:
         pass
@@ -67,20 +95,17 @@ def _extract_archive(content: bytes, skill_dir: Path) -> list[str]:
         import gzip
 
         filename = "extracted_file"
-        (skill_dir / filename).write_bytes(gzip.decompress(content))
-        extracted_files.append(filename)
+        _safe_extract(filename, lambda p: p.write_bytes(gzip.decompress(content)))
     elif content[:2] == b"BZ":  # bzip2
         import bz2
 
         filename = "extracted_file"
-        (skill_dir / filename).write_bytes(bz2.decompress(content))
-        extracted_files.append(filename)
+        _safe_extract(filename, lambda p: p.write_bytes(bz2.decompress(content)))
     elif content[:2] == b"FD":  # xz
         import lzma
 
         filename = "extracted_file"
-        (skill_dir / filename).write_bytes(lzma.decompress(content))
-        extracted_files.append(filename)
+        _safe_extract(filename, lambda p: p.write_bytes(lzma.decompress(content)))
 
     if not extracted_files:
         raise HTTPException(
@@ -122,31 +147,37 @@ async def list_skills(
 )
 async def create_skill_from_file(
     file: UploadFile = File(...),
+    name: str = Query(..., description="Skill name (required)"),
+    description: str = Query(
+        ..., description="Skill description for tool listing (required)"
+    ),
     admin: dict = Depends(verify_admin_api_key),
 ) -> SkillResponse:
     """Create a new skill from file upload.
 
-    Filename becomes skill name.
+    - name: Skill name (required)
+    - description: Skill description for tool listing (required)
     - Single file: saved as SKILL.md in skills/{name}/
     - Archive (.zip, .tar.gz, etc.): extracted to skills/{name}/
     """
-    filename = file.filename or "unknown"
-
-    # Extract skill name from filename (remove extension)
-    skill_name = filename
-    archive_exts = (".skill", ".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz")
-    for ext in archive_exts:
-        if filename.lower().endswith(ext):
-            skill_name = filename[: -len(ext)]
-            break
-    # Remove any remaining extension
-    if "." in skill_name:
-        skill_name = skill_name.rsplit(".", 1)[0]
+    skill_name = name
     # Sanitize
     skill_name = re.sub(r"[^a-zA-Z0-9_-]", "_", skill_name)
-    description = f"Skill uploaded from {filename}"
 
     content = await file.read()
+    archive_exts = (
+        ".skill",
+        ".zip",
+        ".tar",
+        ".tar.gz",
+        ".tgz",
+        ".tar.bz2",
+        ".tar.xz",
+        ".gz",
+        ".bz2",
+        ".xz",
+    )
+    filename = file.filename or ""
     is_archive = (
         zipfile.is_zipfile(io.BytesIO(content))
         or tarfile.is_tarfile(io.BytesIO(content))
@@ -378,6 +409,53 @@ async def upload_skill_content(
     }
 
 
+# ==================== Sync ====================
+
+
+@router.post(
+    "/{name}/sync",
+    summary="Sync skill from filesystem to database",
+)
+async def sync_skill_from_filesystem(
+    name: str,
+    admin: dict = Depends(verify_admin_api_key),
+) -> dict:
+    """Sync skill content from filesystem folder to database JSON.
+
+    Reads all files from skills/{name}/ folder and stores them as JSON in DB.
+    Use this after editing skill files in the filesystem.
+    """
+    async with get_db() as conn:
+        skill = await skill_crud.get_by_name(conn, name)
+
+    if skill is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Skill '{name}' not found",
+        )
+
+    # Load entire folder as JSON
+    folder_content = skill_crud.load_skill_folder_as_json(skill["path"])
+    if folder_content is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Skill folder not found at {skill['path']}",
+        )
+
+    # Update database
+    async with get_db() as conn:
+        await skill_crud.update_content_json(conn, name, folder_content)
+
+    file_count = len(folder_content)
+    return {
+        "name": name,
+        "path": skill["path"],
+        "files_synced": file_count,
+        "files": list(folder_content.keys()),
+        "message": f"Successfully synced {file_count} files from filesystem to database",
+    }
+
+
 # ==================== Delete ====================
 
 
@@ -472,17 +550,14 @@ async def list_skill_files(
 async def download_skill_file(
     name: str,
     filename: str,
+    user: dict = Depends(get_current_user),
 ) -> FileResponse:
     """Download a file from skill folder."""
-    from app.api.deps import get_current_user
-
-    # Get current user (not admin, just authenticated)
-    try:
-        user = await get_current_user()
-    except Exception:
+    # Validate filename to prevent path traversal attacks
+    if ".." in filename or "/" in filename or "\\" in filename:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid filename: cannot contain path separators or '..'",
         )
 
     async with get_db() as conn:
@@ -495,6 +570,12 @@ async def download_skill_file(
         )
 
     skill_file = SKILLS_DIR / skill["path"] / filename
+    # Verify the resolved path is still within SKILLS_DIR (defensive)
+    if not skill_file.resolve().is_relative_to(SKILLS_DIR.resolve()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid filename: path traversal detected",
+        )
     if not skill_file.exists():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

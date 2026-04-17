@@ -53,14 +53,17 @@ async def auth_middleware(scope, receive, send, next_handler):
     if method == "GET":
         return await next_handler(scope, receive, send)
 
-    # Extract API key from query param only (common MCP pattern)
-    api_key = request.query_params.get("key")
+    # Extract API key from header (more secure than URL query param)
+    # Fall back to query param for backward compatibility
+    api_key = request.headers.get("X-API-Key") or request.query_params.get("key")
 
     if not api_key:
         from starlette.responses import JSONResponse
 
         response = JSONResponse(
-            {"error": "Missing API key. Provide via ?key= query param"},
+            {
+                "error": "Missing API key. Provide via X-API-Key header or ?key= query param"
+            },
             status_code=401,
         )
         await response(scope, receive, send)
@@ -150,38 +153,83 @@ async def list_tools() -> list[MCPTool]:
             logger.info(f"Found {len(all_skills)} skills for user {user_id}")
 
         tools = []
-        for skill in all_skills:
-            tool = MCPTool(
-                name=f"use_skill_{skill['name']}",
-                description=skill.get(
-                    "description", f"Execute the {skill['name']} skill"
-                ),
+
+        # Add global index/file tools (always available)
+        tools.append(
+            MCPTool(
+                name="get_skill_index",
+                description="[SKILL] 获取skill的文件索引（文件名和大小，不含内容）。使用此工具获取skill的文件结构，然后按需获取单个文件。",
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "skill_name": {
                             "type": "string",
-                            "description": "The name of the skill to invoke",
+                            "description": "Skill名称",
                         },
                     },
                     "required": ["skill_name"],
                 },
             )
-            tools.append(tool)
+        )
+
+        tools.append(
+            MCPTool(
+                name="get_skill_file",
+                description="[SKILL] 读取skill指定文件的内容。须先调用get_skill_index获取文件列表。",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "skill_name": {
+                            "type": "string",
+                            "description": "Skill名称",
+                        },
+                        "file_path": {
+                            "type": "string",
+                            "description": "文件路径（相对于skill根目录），如'SKILL.md'或'references/template.md'",
+                        },
+                    },
+                    "required": ["skill_name", "file_path"],
+                },
+            )
+        )
+
+        # Add per-skill tools (for backward compatibility, returns full folder)
+        for skill in all_skills:
+            skill_name = skill["name"]
+            skill_desc = skill.get("description", f"Execute the {skill_name} skill")
+
+            tools.append(
+                MCPTool(
+                    name=f"get_skill_{skill_name}",
+                    description=f"[SKILL: {skill_name}] {skill_desc}",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "skill_name": {
+                                "type": "string",
+                                "description": f"Skill name (auto-filled: {skill_name})",
+                            },
+                        },
+                        "required": [],
+                    },
+                )
+            )
 
         logger.info(f"Returning {len(tools)} tools")
         return tools
     except Exception as e:
         logger.error(f"Error listing tools: {e}", exc_info=True)
-        return []
+        raise  # Re-raise so MCP framework returns error response to client
 
 
 @mcp_server.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Handle tools/call MCP method.
 
-    Executes the requested tool (skill) and returns the result.
-    Tool names starting with 'use_skill_' invoke the corresponding skill.
+    Supports:
+    - get_skill_index: Returns skill file index (path -> size, no content)
+    - get_skill_file: Returns content of a single file from skill folder
+    - get_skill_{name}: Returns full skill folder as JSON (for backward compatibility)
 
     Args:
         name: The name of the tool to call.
@@ -190,34 +238,74 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     Returns:
         List of TextContent with the tool execution result.
     """
-    from app.services.skill_service import get_skill_content as svc_get_skill_content
-
-    # Extract skill name from tool name
-    if name.startswith("use_skill_"):
-        skill_name = name[len("use_skill_") :]
-    else:
-        skill_name = name
-
-    # Get skill_name from arguments if provided
-    skill_name = arguments.get("skill_name", skill_name)
-
-    if not skill_name:
-        return [TextContent(type="text", text="Error: Skill name is required")]
+    from app.services.skill_service import (
+        get_skill_content_json as svc_get_skill_content_json,
+        get_skill_index as svc_get_skill_index,
+        get_skill_file as svc_get_skill_file,
+    )
+    import json
 
     # Get current user from context
     user = current_user.get()
     user_id = user.get("id") if user else None
 
-    try:
-        content, error = await svc_get_skill_content(
-            user_id=user_id, skill_name=skill_name
-        )
-        if error:
-            return [TextContent(type="text", text=f"Error: {error}")]
-        return [TextContent(type="text", text=content)]
-    except Exception as e:
-        logger.error(f"Error calling tool {name}: {e}")
-        return [TextContent(type="text", text=f"Error: {str(e)}")]
+    if name == "get_skill_index":
+        skill_name = arguments.get("skill_name", "")
+        if not skill_name:
+            return [TextContent(type="text", text="Error: skill_name is required")]
+        try:
+            index_data, error = await svc_get_skill_index(
+                user_id=user_id, skill_name=skill_name
+            )
+            if error:
+                return [TextContent(type="text", text=f"Error: {error}")]
+            json_str = json.dumps(index_data, ensure_ascii=False, indent=2)
+            return [TextContent(type="text", text=json_str)]
+        except Exception as e:
+            logger.error(f"Error calling get_skill_index: {e}")
+            return [TextContent(type="text", text=f"Error: {str(e)}")]
+
+    elif name == "get_skill_file":
+        skill_name = arguments.get("skill_name", "")
+        file_path = arguments.get("file_path", "")
+        if not skill_name:
+            return [TextContent(type="text", text="Error: skill_name is required")]
+        if not file_path:
+            return [TextContent(type="text", text="Error: file_path is required")]
+        try:
+            content, error = await svc_get_skill_file(
+                user_id=user_id, skill_name=skill_name, file_path=file_path
+            )
+            if error:
+                return [TextContent(type="text", text=f"Error: {error}")]
+            return [TextContent(type="text", text=content)]
+        except Exception as e:
+            logger.error(f"Error calling get_skill_file: {e}")
+            return [TextContent(type="text", text=f"Error: {str(e)}")]
+
+    else:
+        # Legacy: get_skill_{name} - returns full folder JSON
+        if name.startswith("get_skill_"):
+            skill_name = name[len("get_skill_") :]
+        else:
+            skill_name = name
+
+        skill_name = arguments.get("skill_name", skill_name)
+
+        if not skill_name:
+            return [TextContent(type="text", text="Error: Skill name is required")]
+
+        try:
+            content_json, error = await svc_get_skill_content_json(
+                user_id=user_id, skill_name=skill_name
+            )
+            if error:
+                return [TextContent(type="text", text=f"Error: {error}")]
+            json_str = json.dumps(content_json, ensure_ascii=False, indent=2)
+            return [TextContent(type="text", text=json_str)]
+        except Exception as e:
+            logger.error(f"Error calling tool {name}: {e}")
+            return [TextContent(type="text", text=f"Error: {str(e)}")]
 
 
 @mcp_server.list_resources()
