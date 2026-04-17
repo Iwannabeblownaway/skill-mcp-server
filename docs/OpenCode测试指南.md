@@ -4,7 +4,13 @@
 
 - **服务地址**: `http://localhost:8000`
 - **MCP 端点**: `http://localhost:8000/mcp`
-- **API Key**: `2rotINY-6BEbIOpHKMaQNrmVe324uJ56W0mBWTLYRFI`
+- **API Key**: 获取方式见下方说明
+
+## 获取 API Key
+
+1. 启动服务后访问 `http://localhost:8000/docs`
+2. 使用 admin API Key 登录
+3. 调用 `POST /api/v1/users` 创建用户，或查看已有用户的 API Key
 
 ## OpenCode MCP 配置 (config.json)
 
@@ -12,7 +18,7 @@
 {
   "mcpServers": {
     "skill-server": {
-      "url": "http://localhost:8000/mcp?key=2rotINY-6BEbIOpHKMaQNrmVe324uJ56W0mBWTLYRFI",
+      "url": "http://localhost:8000/mcp?key=YOUR_API_KEY",
       "transport": "streamable-http"
     }
   }
@@ -54,7 +60,7 @@ def calculate_total(items):
 
 ### 6. 批量测试所有技能
 ```
-请依次测试所有三个技能（code-review、data-analysis、api-design），告诉我每个技能的返回内容是否正确。
+请依次测试所有技能，告诉我每个技能的返回内容是否正确。
 ```
 
 ## 预期返回格式
@@ -98,20 +104,20 @@ Provide constructive feedback with specific suggestions.
 
 ## 可用 Skills
 
+> 注：实际返回的 skills 取决于用户的授权情况。
+
 | 名称 | 描述 |
 |------|------|
 | code-review | Perform comprehensive code review including style, logic, and best practices. |
 | data-analysis | Analyze datasets and generate summary statistics and visualizations. |
 | api-design | Design RESTful APIs with proper HTTP methods, status codes, and documentation. |
-| test-skill | A test skill (for development). |
-| hello | Hello skill example. |
-
-> 注：实际返回的 skills 取决于用户的授权情况。
 
 ## 故障排查
 
 ### 401 Unauthorized
-- 检查 API Key 是否正确配置在 URL 中：`?key=YOUR_API_KEY`
+- 检查 API Key 是否正确配置
+- 使用 Header 方式更安全：`X-API-Key: YOUR_API_KEY`
+- 或使用 URL 方式：`?key=YOUR_API_KEY`
 - 检查 key 是否过期或被禁用
 
 ### 连接超时
@@ -120,4 +126,9 @@ Provide constructive feedback with specific suggestions.
 
 ### 返回空的 tools list
 - 确认用户已被授权相应技能
-- 检查数据库 `user_skills` 表
+- 使用 admin API Key 调用 `POST /api/v1/user_skills` 为用户授权
+
+### 500 Internal Server Error
+- 检查服务日志
+- 确认 MySQL 和 Redis 服务正常运行
+- 确认 skills 目录存在且有权限

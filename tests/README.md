@@ -137,12 +137,7 @@ testpaths = ["tests"]
 
 ## Dependencies
 
-Install test dependencies:
+Test dependencies are included in `requirements.txt`:
 ```bash
-pip install -r requirements-test.txt
-```
-
-Or manually:
-```bash
-pip install pytest pytest-asyncio httpx
+pip install -r requirements.txt
 ```
