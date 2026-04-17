@@ -131,12 +131,16 @@ class TestGetSkillContent:
                 new=AsyncMock(return_value=True),
             ):
                 with patch(
-                    "app.services.skill_service.skill_crud.load_skill_content",
-                    new=MagicMock(return_value=expected_content),
+                    "app.services.skill_service.skill_crud.get_content_json",
+                    new=AsyncMock(return_value=None),
                 ):
-                    content, error = await skill_service.get_skill_content(
-                        user_id=1, skill_name="test_skill"
-                    )
+                    with patch(
+                        "app.services.skill_service.skill_crud.load_skill_content",
+                        new=MagicMock(return_value=expected_content),
+                    ):
+                        content, error = await skill_service.get_skill_content(
+                            user_id=1, skill_name="test_skill"
+                        )
 
         assert error is None
         assert content == expected_content
@@ -198,12 +202,16 @@ class TestGetSkillContent:
                 new=AsyncMock(return_value=True),
             ):
                 with patch(
-                    "app.services.skill_service.skill_crud.load_skill_content",
-                    new=MagicMock(return_value=""),
+                    "app.services.skill_service.skill_crud.get_content_json",
+                    new=AsyncMock(return_value=None),
                 ):
-                    content, error = await skill_service.get_skill_content(
-                        user_id=1, skill_name="empty_skill"
-                    )
+                    with patch(
+                        "app.services.skill_service.skill_crud.load_skill_content",
+                        new=MagicMock(return_value=""),
+                    ):
+                        content, error = await skill_service.get_skill_content(
+                            user_id=1, skill_name="empty_skill"
+                        )
 
         assert error is None
         assert content == ""

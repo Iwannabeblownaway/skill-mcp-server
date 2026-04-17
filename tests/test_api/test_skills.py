@@ -45,7 +45,10 @@ class TestCreateSkill:
                     "app.api.deps.user_crud.get_by_api_key",
                     new=AsyncMock(return_value=mock_user),
                 ):
-                    with patch("pathlib.Path.mkdir", new_callable=lambda: MagicMock()):
+                    with patch(
+                        "app.api.v1.skills.SKILLS_DIR",
+                        new_callable=lambda: MagicMock(),
+                    ):
                         response = client.post(
                             "/api/v1/skills/json",
                             json=skill_data,
