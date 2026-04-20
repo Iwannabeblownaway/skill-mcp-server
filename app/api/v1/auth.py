@@ -37,6 +37,12 @@ async def grant_skill(
                 detail=f"Skill {grant_data.skill_id} not found",
             )
 
+        if skill.get("status") != "active":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Skill '{skill['name']}' is not active (draft status)",
+            )
+
         granted = await user_skill_crud.grant(
             conn, grant_data.user_id, grant_data.skill_id
         )

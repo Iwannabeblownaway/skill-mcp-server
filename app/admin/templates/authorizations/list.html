@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}授权管理 - Skill MCP Admin{% endblock %}
+
+{% block content %}
+<div class="mb-8 flex justify-between items-center">
+    <div>
+        <h1 class="text-3xl font-bold text-gray-800">授权管理</h1>
+        <p class="text-gray-600 mt-2">管理用户-技能授权关系</p>
+    </div>
+</div>
+
+<!-- Grant Form -->
+<div class="bg-white rounded-lg shadow p-6 mb-6">
+    <h2 class="text-xl font-semibold text-gray-800 mb-4">授予技能</h2>
+    <form method="post" action="/admin/authorizations/grant" class="flex gap-4 items-end">
+        <div class="flex-1">
+            <label class="block text-gray-700 text-sm font-bold mb-2">用户</label>
+            <select name="user_id" required
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
+                <option value="">选择用户...</option>
+                {% for user in users %}
+                <option value="{{ user.id }}">{{ user.username }} ({{ user.user_id }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="flex-1">
+            <label class="block text-gray-700 text-sm font-bold mb-2">技能</label>
+            <select name="skill_id" required
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
+                <option value="">选择技能...</option>
+                {% for skill in skills %}
+                <option value="{{ skill.id }}">{{ skill.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg transition">
+                授予
+            </button>
+        </div>
+    </form>
+</div>
+
+<!-- Authorization List -->
+<div class="bg-white rounded-lg shadow overflow-hidden">
+    <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">用户</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User ID</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">角色</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">技能</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">技能描述</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+            </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200">
+            {% for auth in auths %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ auth.user.username }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ auth.user.user_id }}</td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full {% if auth.user.role == 'admin' %}bg-purple-100 text-purple-800{% else %}bg-gray-100 text-gray-800{% endif %}">
+                        {{ auth.user.role }}
+                    </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ auth.skill.name }}</td>
+                <td class="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">{{ auth.skill.description or '-' }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <form method="post" action="/admin/authorizations/revoke" class="inline">
+                        <input type="hidden" name="user_id" value="{{ auth.user.id }}">
+                        <input type="hidden" name="skill_id" value="{{ auth.skill.id }}">
+                        <button type="submit" class="text-red-600 hover:text-red-900">撤销</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if not auths %}
+<div class="text-center py-12 text-gray-500">
+    <p>暂无授权记录</p>
+</div>
+{% endif %}
+{% endblock %}

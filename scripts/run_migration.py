@@ -12,8 +12,20 @@ conn = pymysql.connect(
 )
 
 with conn.cursor() as cursor:
-    cursor.execute("ALTER TABLE skills ADD COLUMN dependencies JSON AFTER content_json")
-    cursor.execute("UPDATE skills SET dependencies = '[]' WHERE dependencies IS NULL")
+    # Add status column if it doesn't exist
+    cursor.execute("""
+        SELECT COUNT(*) as cnt
+        FROM information_schema.columns
+        WHERE table_schema = %s AND table_name = 'skills' AND column_name = 'status'
+    """, (os.getenv("DB_NAME", "skill_mcp"),))
+    result = cursor.fetchone()
+    if result['cnt'] == 0:
+        cursor.execute("ALTER TABLE skills ADD COLUMN status ENUM('draft', 'active') DEFAULT 'draft' AFTER dependencies")
+        cursor.execute("UPDATE skills SET status = 'active' WHERE status IS NULL")
+        print("Added 'status' column to skills table")
+    else:
+        print("'status' column already exists, skipping")
+
     conn.commit()
     print("Migration complete!")
 

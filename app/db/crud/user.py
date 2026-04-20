@@ -18,7 +18,7 @@ async def get_by_api_key(conn: aiomysql.Connection, api_key: str) -> Optional[di
     """
     async with conn.cursor(aiomysql.DictCursor) as cur:
         await cur.execute(
-            "SELECT id, external_id, username, api_key, role, created_at FROM users WHERE api_key = %s",
+            "SELECT id, user_id, username, api_key, role, created_at FROM users WHERE api_key = %s",
             (api_key,),
         )
         return await cur.fetchone()
@@ -29,42 +29,42 @@ async def get_by_id(conn: aiomysql.Connection, user_id: int) -> Optional[dict]:
 
     Args:
         conn: Database connection
-        user_id: Internal user ID
+        user_id: Internal user ID (auto-increment)
 
     Returns:
         User dict or None if not found
     """
     async with conn.cursor(aiomysql.DictCursor) as cur:
         await cur.execute(
-            "SELECT id, external_id, username, api_key, role, created_at FROM users WHERE id = %s",
+            "SELECT id, user_id, username, api_key, role, created_at FROM users WHERE id = %s",
             (user_id,),
         )
         return await cur.fetchone()
 
 
-async def get_by_external_id(
-    conn: aiomysql.Connection, external_id: str
+async def get_by_user_id(
+    conn: aiomysql.Connection, user_id: str
 ) -> Optional[dict]:
-    """Get user by external ID.
+    """Get user by user_id field.
 
     Args:
         conn: Database connection
-        external_id: External system ID
+        user_id: The user_id field value
 
     Returns:
         User dict or None if not found
     """
     async with conn.cursor(aiomysql.DictCursor) as cur:
         await cur.execute(
-            "SELECT id, external_id, username, api_key, role, created_at FROM users WHERE external_id = %s",
-            (external_id,),
+            "SELECT id, user_id, username, api_key, role, created_at FROM users WHERE user_id = %s",
+            (user_id,),
         )
         return await cur.fetchone()
 
 
 async def create(
     conn: aiomysql.Connection,
-    external_id: Optional[str] = None,
+    user_id: Optional[str] = None,
     username: Optional[str] = None,
     role: str = "user",
     api_key_length: int = 32,
@@ -73,7 +73,7 @@ async def create(
 
     Args:
         conn: Database connection
-        external_id: External system ID (optional)
+        user_id: User identifier (optional)
         username: Display name (optional)
         role: User role ('admin' or 'user')
         api_key_length: Length of generated API key
@@ -85,14 +85,14 @@ async def create(
 
     async with conn.cursor(aiomysql.DictCursor) as cur:
         await cur.execute(
-            "INSERT INTO users (external_id, username, api_key, role) VALUES (%s, %s, %s, %s)",
-            (external_id, username, api_key, role),
+            "INSERT INTO users (user_id, username, api_key, role) VALUES (%s, %s, %s, %s)",
+            (user_id, username, api_key, role),
         )
-        user_id = cur.lastrowid
+        auto_id = cur.lastrowid
 
         return {
-            "id": user_id,
-            "external_id": external_id,
+            "id": auto_id,
+            "user_id": user_id,
             "username": username,
             "api_key": api_key,
             "role": role,
@@ -114,7 +114,92 @@ async def list_users(
     """
     async with conn.cursor(aiomysql.DictCursor) as cur:
         await cur.execute(
-            "SELECT id, external_id, username, api_key, role, created_at FROM users ORDER BY id LIMIT %s OFFSET %s",
+            "SELECT id, user_id, username, api_key, role, created_at FROM users ORDER BY id LIMIT %s OFFSET %s",
             (limit, offset),
         )
         return await cur.fetchall()
+
+
+async def reset_api_key(
+    conn: aiomysql.Connection,
+    user_id: int,
+    api_key_length: int = 32,
+) -> Optional[dict]:
+    """Reset user's API key to a new random key.
+
+    Args:
+        conn: Database connection
+        user_id: Internal user ID (auto-increment)
+        api_key_length: Length of new generated API key
+
+    Returns:
+        Updated user dict or None if user not found
+    """
+    new_api_key = secrets.token_urlsafe(api_key_length)
+
+    async with conn.cursor(aiomysql.DictCursor) as cur:
+        await cur.execute(
+            "UPDATE users SET api_key = %s WHERE id = %s",
+            (new_api_key, user_id),
+        )
+        if cur.rowcount == 0:
+            return None
+
+        # Fetch and return the updated user
+        await cur.execute(
+            "SELECT id, user_id, username, api_key, role, created_at FROM users WHERE id = %s",
+            (user_id,),
+        )
+        return await cur.fetchone()
+
+
+async def update(
+    conn: aiomysql.Connection,
+    user_id: int,
+    username: Optional[str] = None,
+    user_id_value: Optional[str] = None,
+    role: Optional[str] = None,
+) -> Optional[dict]:
+    """Update user info (username, user_id field, and/or role).
+
+    Args:
+        conn: Database connection
+        user_id: Internal user ID (auto-increment)
+        username: New display name (optional, None means keep existing)
+        user_id_value: New user_id field value (optional, "" means set to NULL)
+        role: New role (optional, None means keep existing)
+
+    Returns:
+        Updated user dict or None if user not found
+    """
+    updates = []
+    params = []
+
+    if username is not None:
+        updates.append("username = %s")
+        params.append(username)
+    if user_id_value is not None:
+        updates.append("user_id = %s")
+        params.append(user_id_value if user_id_value != "" else None)
+    if role is not None:
+        updates.append("role = %s")
+        params.append(role)
+
+    if not updates:
+        return await get_by_id(conn, user_id)
+
+    params.append(user_id)
+    async with conn.cursor(aiomysql.DictCursor) as cur:
+        await cur.execute(
+            f"UPDATE users SET {', '.join(updates)} WHERE id = %s",
+            tuple(params),
+        )
+        if cur.rowcount == 0:
+            return None
+
+        # Fetch and return the updated user
+        await cur.execute(
+            "SELECT id, user_id, username, api_key, role, created_at FROM users WHERE id = %s",
+            (user_id,),
+        )
+        return await cur.fetchone()

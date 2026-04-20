@@ -28,6 +28,7 @@ class TestGrantSkill:
             "name": "test_skill",
             "description": "Test",
             "content": "Content",
+            "status": "active",
         }
 
         with patch(
@@ -141,6 +142,7 @@ class TestGrantSkill:
             "name": "test_skill",
             "description": "Test",
             "content": "Content",
+            "status": "active",
         }
 
         with patch(

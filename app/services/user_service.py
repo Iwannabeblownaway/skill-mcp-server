@@ -32,7 +32,7 @@ async def create_user(user_id: str, username: str, role: str = "user") -> dict:
     """
     async with get_db() as conn:
         return await user_crud.create(
-            conn, external_id=user_id, username=username, role=role
+            conn, user_id=user_id, username=username, role=role
         )
 
 

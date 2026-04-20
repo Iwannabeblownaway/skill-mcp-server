@@ -10,6 +10,8 @@
 - **REST API**: 完整的管理接口（用户、技能、授权）
 - **调用审计**: 记录所有 Skill 调用日志
 - **权限过滤**: `tools/list` 仅返回用户授权的 Skills
+- **安全防护**: 支持压缩包炸弹检测、路径遍历防护
+- **MCP 依赖**: 支持声明技能所需的外部 MCP 服务依赖
 
 ## 快速开始
 
@@ -32,9 +34,13 @@ DB_NAME=skill_mcp
 
 REDIS_HOST=localhost
 REDIS_PORT=6379
+REDIS_DB=0
+REDIS_PASSWORD=
 
 SECRET_KEY=change-me-in-production
 DEBUG=true
+PORT=8000
+LOG_LEVEL=INFO
 ```
 
 ### 3. 初始化数据库
@@ -95,7 +101,8 @@ python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 | DELETE | `/api/v1/skills/{name}` | 删除技能 | admin |
 | GET | `/api/v1/skills/{name}/content` | 获取技能内容 | admin |
 | GET | `/api/v1/skills/{name}/files` | 列出技能文件 | admin |
-| GET | `/api/v1/skills/{name}/files/{filename}` | 下载技能文件 | user |
+| GET | `/api/v1/skills/{name}/files/{filename}` | 下载技能文件 | admin |
+| GET | `/api/v1/skills/{name}/dependencies` | 获取 MCP 依赖 | admin |
 
 ### 授权管理
 
@@ -114,25 +121,14 @@ python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ### tools/list
 
-返回当前用户授权的所有技能。
+返回当前用户授权的所有技能（含全局工具和技能专用工具）。
 
-**输入**: 无
+**全局工具**:
+- `get_skill_index` - 获取技能的文件索引
+- `get_skill_file` - 读取技能指定文件的内容
 
-**输出**: Skill 列表（含 name, description, inputSchema）
-
-### tools/call
-
-调用指定技能获取内容（通过 `get_skill_index` + `get_skill_file` 获取单个文件，或 `get_skill_{name}` 获取完整内容）。
-
-**输入**:
-```json
-{
-  "name": "get_skill_code-review",
-  "arguments": {}
-}
-```
-
-**输出**: Skill 内容 (JSON 格式)
+**技能工具**:
+- `get_skill_{name}` - 获��指定技能完整内容（向后兼容）
 
 ### get_skill_index
 
@@ -141,9 +137,7 @@ python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 **输入**:
 ```json
 {
-  "arguments": {
-    "skill_name": "code-review"
-  }
+  "skill_name": "code-review"
 }
 ```
 
@@ -156,14 +150,52 @@ python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 **输入**:
 ```json
 {
-  "arguments": {
-    "skill_name": "code-review",
-    "file_path": "SKILL.md"
-  }
+  "skill_name": "code-review",
+  "file_path": "SKILL.md"
 }
 ```
 
 **输出**: 文件内容
+
+### get_skill_{name}
+
+获取指定技能完整内容（向后兼容）。
+
+**输入**:
+```json
+{
+  "skill_name": "code-review"
+}
+```
+
+**输出**: Skill 内容 (JSON 格式)
+
+## MCP 依赖配置
+
+技能可以声明所需的外部 MCP 服务依赖。在创建技能时，通过 `mcp_config` 参数传入：
+
+```json
+{
+  "mcpServers": {
+    "sorftime": {
+      "url": "https://mcp.sorftime.com",
+      "headers": {
+        "Authorization": "Bearer YOUR_TOKEN"
+      }
+    }
+  }
+}
+```
+
+系统会自动提取 URL 并存储，调用技能时会返回详细的 MCP 配置检查指南。
+
+## 安全特性
+
+- **API Key 认证**: 通过 `X-API-Key` header 或 `?key=` query param
+- **路径遍历防护**: 防止 `..` 攻击
+- **压缩包炸弹检测**: 检测恶意压缩比（>100:1）
+- **文件大小限制**: 单文件最大 100MB，总提取最大 100MB
+- **文件数量限制**: 最多 1000 个文件
 
 ## 测试
 

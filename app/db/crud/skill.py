@@ -28,8 +28,8 @@ async def create(
     name: str,
     description: str,
     path: str,
-    version: str = "1.0",
     dependencies: Optional[list] = None,
+    status: str = "draft",
 ) -> dict:
     """Create a new skill metadata record.
 
@@ -38,8 +38,8 @@ async def create(
         name: Skill name (unique)
         description: Skill description
         path: Relative path to skill folder
-        version: Skill version
         dependencies: Optional list of MCP URL patterns this skill requires
+        status: Skill status ('draft' or 'active')
 
     Returns:
         Created skill dict
@@ -49,8 +49,8 @@ async def create(
     deps_json = json.dumps(dependencies) if dependencies else None
     async with conn.cursor(aiomysql.DictCursor) as cur:
         await cur.execute(
-            "INSERT INTO skills (name, description, path, version, dependencies) VALUES (%s, %s, %s, %s, %s)",
-            (name, description, path, version, deps_json),
+            "INSERT INTO skills (name, description, path, dependencies, status) VALUES (%s, %s, %s, %s, %s)",
+            (name, description, path, deps_json, status),
         )
         skill_id = cur.lastrowid
 
@@ -59,8 +59,8 @@ async def create(
             "name": name,
             "description": description,
             "path": path,
-            "version": version,
             "dependencies": dependencies or [],
+            "status": status,
         }
 
 
@@ -68,7 +68,6 @@ async def update(
     conn: aiomysql.Connection,
     name: str,
     description: str | None = None,
-    version: str | None = None,
     dependencies: list | None = None,
 ) -> Optional[dict]:
     """Update an existing skill metadata.
@@ -77,7 +76,6 @@ async def update(
         conn: Database connection
         name: Skill name
         description: New description (if provided)
-        version: New version (if provided)
         dependencies: New MCP dependencies list (if provided)
 
     Returns:
@@ -91,9 +89,6 @@ async def update(
     if description is not None:
         updates.append("description = %s")
         params.append(description)
-    if version is not None:
-        updates.append("version = %s")
-        params.append(version)
     if dependencies is not None:
         updates.append("dependencies = %s")
         params.append(json.dumps(dependencies))
@@ -109,6 +104,27 @@ async def update(
         if cur.rowcount == 0:
             return None
         return await get_by_name(conn, name)
+
+
+async def update_status(conn: aiomysql.Connection, skill_id: int, status: str) -> Optional[dict]:
+    """Update skill status.
+
+    Args:
+        conn: Database connection
+        skill_id: Skill ID
+        status: New status ('draft' or 'active')
+
+    Returns:
+        Updated skill dict or None if not found
+    """
+    async with conn.cursor(aiomysql.DictCursor) as cur:
+        await cur.execute(
+            "UPDATE skills SET status = %s WHERE id = %s",
+            (status, skill_id),
+        )
+        if cur.rowcount == 0:
+            return None
+        return await get_by_id(conn, skill_id)
 
 
 async def delete(conn: aiomysql.Connection, name: str) -> bool:
@@ -158,7 +174,7 @@ async def get_by_name(conn: aiomysql.Connection, name: str) -> Optional[dict]:
 
     async with conn.cursor(aiomysql.DictCursor) as cur:
         await cur.execute(
-            "SELECT id, name, description, path, version, dependencies, created_at, updated_at FROM skills WHERE name = %s",
+            "SELECT id, name, description, path, dependencies, status, created_at, updated_at FROM skills WHERE name = %s",
             (name,),
         )
         row = await cur.fetchone()
@@ -181,7 +197,7 @@ async def get_by_id(conn: aiomysql.Connection, skill_id: int) -> Optional[dict]:
 
     async with conn.cursor(aiomysql.DictCursor) as cur:
         await cur.execute(
-            "SELECT id, name, description, path, version, dependencies, created_at, updated_at FROM skills WHERE id = %s",
+            "SELECT id, name, description, path, dependencies, status, created_at, updated_at FROM skills WHERE id = %s",
             (skill_id,),
         )
         row = await cur.fetchone()
@@ -207,7 +223,7 @@ async def list_all(
 
     async with conn.cursor(aiomysql.DictCursor) as cur:
         await cur.execute(
-            "SELECT id, name, description, path, version, dependencies, created_at, updated_at FROM skills ORDER BY id LIMIT %s OFFSET %s",
+            "SELECT id, name, description, path, dependencies, status, created_at, updated_at FROM skills ORDER BY id LIMIT %s OFFSET %s",
             (limit, offset),
         )
         rows = await cur.fetchall()
@@ -234,7 +250,7 @@ async def get_by_ids(conn: aiomysql.Connection, skill_ids: list[int]) -> list[di
     async with conn.cursor(aiomysql.DictCursor) as cur:
         format_ids = ",".join(["%s"] * len(skill_ids))
         await cur.execute(
-            f"SELECT id, name, description, path, version, dependencies, created_at, updated_at FROM skills WHERE id IN ({format_ids}) ORDER BY id",
+            f"SELECT id, name, description, path, dependencies, created_at, updated_at FROM skills WHERE id IN ({format_ids}) ORDER BY id",
             tuple(skill_ids),
         )
         rows = await cur.fetchall()
@@ -298,52 +314,6 @@ def load_skill_folder_as_json(skill_path: str) -> Optional[dict]:
                 result[rel_path] = None
 
     return result if result else None
-
-
-async def update_content_json(
-    conn: aiomysql.Connection, name: str, content_json: dict
-) -> bool:
-    """Update skill content_json in database.
-
-    Args:
-        conn: Database connection
-        name: Skill name
-        content_json: Dict of {file_path: content}
-
-    Returns:
-        True if updated, False if skill not found
-    """
-    import json
-
-    async with conn.cursor() as cur:
-        await cur.execute(
-            "UPDATE skills SET content_json = %s WHERE name = %s",
-            (json.dumps(content_json, ensure_ascii=False), name),
-        )
-        return cur.rowcount > 0
-
-
-async def get_content_json(conn: aiomysql.Connection, name: str) -> Optional[dict]:
-    """Get skill content_json from database.
-
-    Args:
-        conn: Database connection
-        name: Skill name
-
-    Returns:
-        Dict of {file_path: content} or None if not found
-    """
-    import json
-
-    async with conn.cursor(aiomysql.DictCursor) as cur:
-        await cur.execute(
-            "SELECT content_json FROM skills WHERE name = %s",
-            (name,),
-        )
-        row = await cur.fetchone()
-        if row and row.get("content_json"):
-            return json.loads(row["content_json"])
-        return None
 
 
 def load_skill_index(skill_path: str) -> Optional[dict[str, int]]:

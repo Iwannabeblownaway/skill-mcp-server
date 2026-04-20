@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}创建技能 - Skill MCP Admin{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <h1 class="text-3xl font-bold text-gray-800">创建技能</h1>
+    <p class="text-gray-600 mt-2">填写技能信息后上传文件</p>
+</div>
+
+<div class="max-w-lg">
+    <div class="bg-white rounded-lg shadow p-6">
+        <form method="post" action="/admin/skills/create">
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2" for="name">
+                    技能名称 <span class="text-red-500">*</span>
+                </label>
+                <input type="text" id="name" name="name" required
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                    placeholder="如: my-skill">
+                <p class="text-gray-500 text-xs mt-1">英文名称，用于标识。建议使用 kebab-case。</p>
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2" for="description">
+                    描述
+                </label>
+                <textarea id="description" name="description" rows="3"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                    placeholder="技能的详细描述"></textarea>
+            </div>
+
+            <div class="mb-6">
+                <label class="block text-gray-700 text-sm font-bold mb-2" for="dependencies">
+                    MCP 依赖
+                </label>
+                <textarea id="dependencies" name="dependencies" rows="2"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                    placeholder="dep1,dep2"></textarea>
+                <p class="text-gray-500 text-xs mt-1">支持格式：逗号分隔、JSON 数组、或完整 MCP 配置 JSON</p>
+            </div>
+
+            <div class="flex items-center justify-between">
+                <a href="/admin/skills" class="text-gray-600 hover:text-gray-800">
+                    ← 返回列表
+                </a>
+                <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition">
+                    下一步: 上传文件
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

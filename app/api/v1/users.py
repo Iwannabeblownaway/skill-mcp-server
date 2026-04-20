@@ -25,14 +25,14 @@ async def create_new_user(
     async with get_db() as conn:
         user = await user_crud.create(
             conn,
-            external_id=user_data.user_id,
+            user_id=user_data.user_id,
             username=user_data.username,
             role=user_data.role or "user",
         )
 
     return UserWithKey(
         id=user["id"],
-        user_id=user["external_id"],
+        user_id=user["user_id"],
         username=user["username"],
         api_key=user["api_key"],
         role=user["role"],

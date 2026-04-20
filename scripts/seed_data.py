@@ -96,24 +96,14 @@ def create_sample_skills(conn, admin_user_id: int) -> list:
     # Skills that exist in filesystem
     sample_skills = [
         {
-            "name": "code-review",
-            "description": "Perform comprehensive code review including style, logic, and best practices.",
-            "path": "code-review",
+            "name": "skill-auditor",
+            "description": "Audit a SKILL for logic consistency, content completeness, and quality issues.",
+            "path": "skill-auditor",
         },
         {
-            "name": "data-analysis",
-            "description": "Analyze datasets and generate summary statistics and visualizations.",
-            "path": "data-analysis",
-        },
-        {
-            "name": "api-design",
-            "description": "Design RESTful APIs with proper HTTP methods, status codes, and documentation.",
-            "path": "api-design",
-        },
-        {
-            "name": "hello",
-            "description": "A simple test skill for development and verification.",
-            "path": "hello",
+            "name": "time-compare",
+            "description": "Compare local system time with remote server time.",
+            "path": "time-compare",
         },
     ]
 
@@ -130,8 +120,8 @@ def create_sample_skills(conn, admin_user_id: int) -> list:
             # Create skill metadata record
             cursor.execute(
                 """
-                INSERT INTO skills (name, description, path, version, created_at, updated_at)
-                VALUES (%s, %s, %s, '1.0', %s, %s)
+                INSERT INTO skills (name, description, path, status, created_at, updated_at)
+                VALUES (%s, %s, %s, 'active', %s, %s)
                 """,
                 (
                     skill["name"],

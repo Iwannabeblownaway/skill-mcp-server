@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+
+{% block title %}{{ skill.name }} - 技能详情 - Skill MCP Admin{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <a href="/admin/skills" class="text-blue-600 hover:text-blue-800 mb-4 inline-block">← 返回技能列表</a>
+    <div class="flex items-center gap-4">
+        <h1 class="text-3xl font-bold text-gray-800">{{ skill.name }}</h1>
+        {% if skill.status == 'draft' %}
+        <span class="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-medium">草稿</span>
+        {% else %}
+        <span class="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium">已激活</span>
+        {% endif %}
+    </div>
+    <p class="text-gray-600 mt-2">技能详情</p>
+</div>
+
+{% if skill.status == 'draft' and files|length == 0 %}
+<div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+    <div class="flex items-center">
+        <svg class="w-5 h-5 text-yellow-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+        </svg>
+        <span class="text-yellow-700 font-medium">警告：此技能暂无文件，无法使用。请上传文件。</span>
+    </div>
+</div>
+{% endif %}
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Skill Info -->
+    <div class="bg-white rounded-lg shadow p-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">技能信息</h2>
+        <dl class="space-y-3">
+            <div>
+                <dt class="text-gray-500 text-sm">名称</dt>
+                <dd class="text-gray-900 font-medium">{{ skill.name }}</dd>
+            </div>
+            <div>
+                <dt class="text-gray-500 text-sm">描述</dt>
+                <dd class="text-gray-900">{{ skill.description or '-' }}</dd>
+            </div>
+            <div>
+                <dt class="text-gray-500 text-sm">MCP 依赖</dt>
+                <dd class="text-gray-900">
+                    {% if skill.dependencies and skill.dependencies|length > 0 %}
+                    <div class="flex flex-wrap gap-2 mt-1">
+                        {% for dep in skill.dependencies %}
+                        <span class="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs font-mono">{{ dep }}</span>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <span class="text-gray-400">无</span>
+                    {% endif %}
+                </dd>
+            </div>
+            <div>
+                <dt class="text-gray-500 text-sm">状态</dt>
+                <dd class="text-gray-900">
+                    {% if skill.status == 'draft' %}草稿{% else %}已激活{% endif %}
+                </dd>
+            </div>
+            <div>
+                <dt class="text-gray-500 text-sm">创建时间</dt>
+                <dd class="text-gray-900">{{ skill.created_at.strftime('%Y-%m-%d %H:%M:%S') if skill.created_at else '-' }}</dd>
+            </div>
+            <div>
+                <dt class="text-gray-500 text-sm">更新时间</dt>
+                <dd class="text-gray-900">{{ skill.updated_at.strftime('%Y-%m-%d %H:%M:%S') if skill.updated_at else '-' }}</dd>
+            </div>
+        </dl>
+
+        <hr class="my-4">
+
+        <!-- Update Metadata -->
+        <h3 class="text-lg font-medium text-gray-800 mb-3">更新信息</h3>
+        <form method="post" action="/admin/skills/{{ skill.id }}/update">
+            <div class="mb-3">
+                <label class="block text-gray-600 text-sm mb-1" for="description-{{ skill.id }}">描述</label>
+                <textarea name="description" id="description-{{ skill.id }}" rows="2"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">{{ skill.description or '' }}</textarea>
+            </div>
+            <div class="mb-3">
+                <label class="block text-gray-600 text-sm mb-1" for="dependencies-{{ skill.id }}">MCP 依赖</label>
+                <input type="text" name="dependencies" id="dependencies-{{ skill.id }}"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                    value="{{ skill.dependencies|join(',') if skill.dependencies else '' }}"
+                    placeholder="dep1,dep2">
+                <p class="text-gray-500 text-xs mt-1">支持：逗号分隔、JSON 数组、MCP 配置 JSON</p>
+            </div>
+            <button type="submit" class="w-full bg-blue-100 hover:bg-blue-200 text-blue-700 py-2 rounded-lg transition">
+                更新信息
+            </button>
+        </form>
+
+        <hr class="my-4">
+
+        <form method="post" action="/admin/skills/{{ skill.id }}/delete" onsubmit="return confirm('确定删除技能 {{ skill.name }}? 此操作不可恢复。')">
+            <button type="submit" class="w-full bg-red-100 hover:bg-red-200 text-red-600 py-2 rounded-lg transition">
+                删除技能
+            </button>
+        </form>
+    </div>
+
+    <!-- Files & Upload -->
+    <div class="lg:col-span-2">
+        <!-- Upload -->
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">上传文件</h2>
+            <form method="post" action="/admin/skills/{{ skill.id }}/upload" enctype="multipart/form-data">
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">
+                        上传 ZIP 包或单个文件
+                    </label>
+                    <div class="flex items-center gap-4">
+                        <input type="file" name="file" accept=".zip,.skill,.tar,.tar.gz,.tgz,.tar.bz2,.tar.xz,.md,.py,.js,.txt"
+                            class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
+                        <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition">
+                            上传
+                        </button>
+                    </div>
+                    <p class="text-gray-500 text-xs mt-2">ZIP 会覆盖整个技能目录，单文件会直接覆盖该文件。上传后自动激活技能。</p>
+                </div>
+            </form>
+
+            <!-- Download Package -->
+            <div class="mt-4 pt-4 border-t border-gray-200">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-lg font-medium text-gray-800">安装包 (ZIP格式)</h3>
+                        <p class="text-gray-500 text-xs mt-1">下载后可提供给其他管理员导入使用</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <a href="/admin/skills/{{ skill.id }}/download"
+                           class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition text-sm">
+                            下载 .zip
+                        </a>
+                        <form method="post" action="/admin/skills/{{ skill.id }}/rebuild-package" class="inline">
+                            <button type="submit" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition text-sm">
+                                重新打包
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Files List -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">文件列表 ({{ files|length }})</h2>
+
+            {% if files %}
+            <div class="space-y-2">
+                {% for file in files %}
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 text-gray-400 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                        </svg>
+                        <span class="text-gray-700 font-mono text-sm">{{ file }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-gray-500 text-center py-8">暂无文件，请上传</p>
+            {% endif %}
+        </div>
+
+        <!-- Users with this skill -->
+        <div class="bg-white rounded-lg shadow p-6 mt-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">已授权用户 ({{ users_with_skill|length }})</h2>
+
+            {% if users_with_skill %}
+            <div class="flex flex-wrap gap-2">
+                {% for user in users_with_skill %}
+                <span class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
+                    {{ user.username }}
+                </span>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-gray-500 text-center py-4">暂无用户授权此技能</p>
+            {% endif %}
+
+            <div class="mt-4">
+                <a href="/admin/authorizations" class="text-blue-600 hover:text-blue-800 text-sm">
+                    管理授权 →
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

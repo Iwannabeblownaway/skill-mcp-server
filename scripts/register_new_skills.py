@@ -47,8 +47,8 @@ with conn.cursor() as cursor:
         # Insert skill
         cursor.execute(
             """
-            INSERT INTO skills (name, description, path, version, created_at, updated_at)
-            VALUES (%s, %s, %s, '1.0', %s, %s)
+            INSERT INTO skills (name, description, path, status, created_at, updated_at)
+            VALUES (%s, %s, %s, 'active', %s, %s)
         """,
             (
                 skill["name"],

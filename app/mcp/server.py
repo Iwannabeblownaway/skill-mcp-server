@@ -136,10 +136,15 @@ async def list_tools() -> list[MCPTool]:
         # Get current user from context
         user = current_user.get()
         user_id = user.get("id") if user else None
+        is_admin = user.get("role") == "admin" if user else False
 
         async with get_db() as conn:
             logger.info("DB connection acquired, fetching skills")
-            if user_id:
+            if is_admin:
+                # Admin gets all skills without authorization check
+                all_skills = await skill_crud.list_all(conn, limit=10000)
+                logger.info(f"Admin user {user_id}, returning all {len(all_skills)} skills")
+            elif user_id:
                 # Fetch only user's authorized skills
                 user_skills = await user_skill_crud.get_user_skills(conn, user_id)
                 skill_ids = [s["id"] for s in user_skills]
@@ -424,6 +429,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     # Get current user from context
     user = current_user.get()
     user_id = user.get("id") if user else None
+    is_admin = user.get("role") == "admin" if user else False
 
     # If no user, return error (should not happen if auth middleware works)
     if user_id is None:
@@ -444,7 +450,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 return [TextContent(type="text", text=f"Error: {error_msg}")]
             try:
                 index_data, error = await svc_get_skill_index(
-                    user_id=user_id, skill_name=skill_name
+                    user_id=user_id, skill_name=skill_name, is_admin=is_admin
                 )
                 if error:
                     error_msg = error
@@ -473,7 +479,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 return [TextContent(type="text", text=f"Error: {error_msg}")]
             try:
                 content, error = await svc_get_skill_file(
-                    user_id=user_id, skill_name=skill_name, file_path=file_path
+                    user_id=user_id, skill_name=skill_name, file_path=file_path, is_admin=is_admin
                 )
                 if error:
                     error_msg = error
@@ -508,7 +514,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
             try:
                 content_json, error = await svc_get_skill_content_json(
-                    user_id=user_id, skill_name=skill_name
+                    user_id=user_id, skill_name=skill_name, is_admin=is_admin
                 )
                 if error:
                     error_msg = error

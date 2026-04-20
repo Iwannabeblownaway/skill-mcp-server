@@ -73,28 +73,32 @@ async def get_user_skills(user_id: int) -> list[dict]:
         return result
 
 
-async def check_permission(user_id: int, skill_name: str) -> bool:
+async def check_permission(user_id: int, skill_name: str, is_admin: bool = False) -> bool:
     """Check if a user has permission to access a skill.
 
     Args:
         user_id: User ID
         skill_name: Skill name
+        is_admin: If True, skip permission check (admin has all permissions)
 
     Returns:
         True if user has permission, False otherwise
     """
+    if is_admin:
+        return True
     async with get_db() as conn:
         return await user_skill_crud.has_skill(conn, user_id, skill_name)
 
 
 async def get_skill_content(
-    user_id: int, skill_name: str
+    user_id: int, skill_name: str, is_admin: bool = False
 ) -> tuple[Optional[str], Optional[str]]:
     """Get the SKILL.md content of a skill if user has permission.
 
     Args:
         user_id: User ID
         skill_name: Skill name
+        is_admin: If True, skip permission check (admin has all permissions)
 
     Returns:
         Tuple of (content, error). If successful, error is None.
@@ -108,17 +112,13 @@ async def get_skill_content(
         if sk is None:
             return None, "Skill not found"
 
-        # Check permission
-        has_perm = await user_skill_crud.has_skill(conn, user_id, skill_name)
-        if not has_perm:
-            return None, "Permission denied"
+        # Check permission (skip for admin)
+        if not is_admin:
+            has_perm = await user_skill_crud.has_skill(conn, user_id, skill_name)
+            if not has_perm:
+                return None, "Permission denied"
 
-        # Try DB content_json first, fall back to filesystem
-        content_json = await skill_crud.get_content_json(conn, skill_name)
-        if content_json and "SKILL.md" in content_json:
-            return content_json["SKILL.md"], None
-
-        # Fall back to filesystem
+        # Load from filesystem
         content = skill_crud.load_skill_content(sk["path"])
         if content is None:
             return None, "Skill file not found"
@@ -127,13 +127,14 @@ async def get_skill_content(
 
 
 async def get_skill_content_json(
-    user_id: int, skill_name: str
+    user_id: int, skill_name: str, is_admin: bool = False
 ) -> tuple[Optional[dict], Optional[str]]:
     """Get the entire skill folder as JSON if user has permission.
 
     Args:
         user_id: User ID
         skill_name: Skill name
+        is_admin: If True, skip permission check (admin has all permissions)
 
     Returns:
         Tuple of ({file_path: content}, error). If successful, error is None.
@@ -147,17 +148,13 @@ async def get_skill_content_json(
         if sk is None:
             return None, "Skill not found"
 
-        # Check permission
-        has_perm = await user_skill_crud.has_skill(conn, user_id, skill_name)
-        if not has_perm:
-            return None, "Permission denied"
+        # Check permission (skip for admin)
+        if not is_admin:
+            has_perm = await user_skill_crud.has_skill(conn, user_id, skill_name)
+            if not has_perm:
+                return None, "Permission denied"
 
-        # Try DB content_json first
-        content_json = await skill_crud.get_content_json(conn, skill_name)
-        if content_json:
-            return content_json, None
-
-        # Fall back to filesystem
+        # Load from filesystem
         content_json = skill_crud.load_skill_folder_as_json(sk["path"])
         if content_json is None:
             return None, "Skill folder not found"
@@ -194,13 +191,14 @@ async def log_call(
 
 
 async def get_skill_index(
-    user_id: int, skill_name: str
+    user_id: int, skill_name: str, is_admin: bool = False
 ) -> tuple[Optional[dict], Optional[str]]:
     """Get skill file index (file paths + sizes, no content).
 
     Args:
         user_id: User ID
         skill_name: Skill name
+        is_admin: If True, skip permission check (admin has all permissions)
 
     Returns:
         Tuple of ({name, version, files, _mcp_skill_context}, error). If successful, error is None.
@@ -211,10 +209,11 @@ async def get_skill_index(
         if sk is None:
             return None, "Skill not found"
 
-        # Check permission
-        has_perm = await user_skill_crud.has_skill(conn, user_id, skill_name)
-        if not has_perm:
-            return None, "Permission denied"
+        # Check permission (skip for admin)
+        if not is_admin:
+            has_perm = await user_skill_crud.has_skill(conn, user_id, skill_name)
+            if not has_perm:
+                return None, "Permission denied"
 
         # Get index from filesystem
         index = skill_crud.load_skill_index(sk["path"])
@@ -235,7 +234,7 @@ async def get_skill_index(
 
 
 async def get_skill_file(
-    user_id: int, skill_name: str, file_path: str
+    user_id: int, skill_name: str, file_path: str, is_admin: bool = False
 ) -> tuple[Optional[str], Optional[str]]:
     """Get content of a single file from skill folder.
 
@@ -243,6 +242,7 @@ async def get_skill_file(
         user_id: User ID
         skill_name: Skill name
         file_path: Relative path within skill folder
+        is_admin: If True, skip permission check (admin has all permissions)
 
     Returns:
         Tuple of (file_content_with_context, error). If successful, error is None.
@@ -254,10 +254,11 @@ async def get_skill_file(
         if sk is None:
             return None, "Skill not found"
 
-        # Check permission
-        has_perm = await user_skill_crud.has_skill(conn, user_id, skill_name)
-        if not has_perm:
-            return None, "Permission denied"
+        # Check permission (skip for admin)
+        if not is_admin:
+            has_perm = await user_skill_crud.has_skill(conn, user_id, skill_name)
+            if not has_perm:
+                return None, "Permission denied"
 
         # Get all files index for context
         index = skill_crud.load_skill_index(sk["path"])

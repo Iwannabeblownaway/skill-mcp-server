@@ -96,8 +96,9 @@ def sqlite_in_memory_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL,
             description TEXT NOT NULL,
-            content TEXT NOT NULL,
-            version TEXT DEFAULT '1.0',
+            path TEXT NOT NULL,
+            dependencies TEXT,
+            status TEXT DEFAULT 'draft',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -194,7 +195,7 @@ def sample_skill():
         "name": "test_skill",
         "description": "A test skill for unit testing",
         "path": "test_skill",
-        "version": "1.0",
+        "status": "active",
         "created_at": datetime.now(),
         "updated_at": datetime.now(),
     }
@@ -209,7 +210,7 @@ def sample_skills_list():
             "name": "skill_1",
             "description": "First test skill",
             "path": "skill_1",
-            "version": "1.0",
+            "status": "active",
             "created_at": datetime.now(),
             "updated_at": datetime.now(),
         },
@@ -218,7 +219,7 @@ def sample_skills_list():
             "name": "skill_2",
             "description": "Second test skill",
             "path": "skill_2",
-            "version": "1.0",
+            "status": "active",
             "created_at": datetime.now(),
             "updated_at": datetime.now(),
         },

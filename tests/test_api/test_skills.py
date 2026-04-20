@@ -373,6 +373,364 @@ class TestDeleteSkill:
         assert response.status_code in [401, 422]
 
 
+class TestSkillDependencies:
+    """Tests for GET /api/v1/skills/{name}/dependencies endpoint."""
+
+    def test_get_dependencies_success(self, client, admin_auth_headers, mock_get_db):
+        """Test successfully getting skill dependencies."""
+        conn, cursor = mock_get_db
+
+        mock_admin = {
+            "id": 2,
+            "email": "admin@example.com",
+            "role": "admin",
+            "api_key": "admin_key",
+        }
+        mock_skill = {
+            "id": 1,
+            "name": "test_skill",
+            "description": "Test skill",
+            "path": "test_skill",
+            "dependencies": ["https://mcp.sorftime.com", "https://mcp.example.com"],
+        }
+
+        with patch(
+            "app.api.v1.skills.skill_crud.get_by_name",
+            new=AsyncMock(return_value=mock_skill),
+        ):
+            with patch(
+                "app.api.deps.user_crud.get_by_api_key",
+                new=AsyncMock(return_value=mock_admin),
+            ):
+                response = client.get(
+                    "/api/v1/skills/test_skill/dependencies",
+                    headers=admin_auth_headers,
+                )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "test_skill"
+        assert len(data["dependencies"]) == 2
+
+    def test_get_dependencies_not_found(self, client, admin_auth_headers, mock_get_db):
+        """Test getting dependencies for non-existent skill."""
+        conn, cursor = mock_get_db
+
+        mock_admin = {
+            "id": 2,
+            "email": "admin@example.com",
+            "role": "admin",
+            "api_key": "admin_key",
+        }
+
+        with patch(
+            "app.api.v1.skills.skill_crud.get_by_name",
+            new=AsyncMock(return_value=None),
+        ):
+            with patch(
+                "app.api.deps.user_crud.get_by_api_key",
+                new=AsyncMock(return_value=mock_admin),
+            ):
+                response = client.get(
+                    "/api/v1/skills/nonexistent/dependencies",
+                    headers=admin_auth_headers,
+                )
+
+        assert response.status_code == 404
+
+    def test_get_dependencies_unauthorized(self, client, user_auth_headers):
+        """Test getting dependencies without admin privileges."""
+        mock_user = {
+            "id": 1,
+            "email": "user@example.com",
+            "role": "user",
+            "api_key": "user_key",
+        }
+
+        with patch(
+            "app.api.deps.user_crud.get_by_api_key",
+            new=AsyncMock(return_value=mock_user),
+        ):
+            response = client.get(
+                "/api/v1/skills/test_skill/dependencies",
+                headers=user_auth_headers,
+            )
+
+        assert response.status_code == 403
+
+
+class TestSkillFiles:
+    """Tests for GET /api/v1/skills/{name}/files endpoint."""
+
+    def test_list_skill_files_success(self, client, admin_auth_headers, mock_get_db):
+        """Test successfully listing skill files."""
+        conn, cursor = mock_get_db
+
+        mock_admin = {
+            "id": 2,
+            "email": "admin@example.com",
+            "role": "admin",
+            "api_key": "admin_key",
+        }
+        mock_skill = {
+            "id": 1,
+            "name": "test_skill",
+            "description": "Test skill",
+            "path": "test_skill",
+        }
+
+        with patch(
+            "app.api.v1.skills.skill_crud.get_by_name",
+            new=AsyncMock(return_value=mock_skill),
+        ):
+            with patch(
+                "app.api.deps.user_crud.get_by_api_key",
+                new=AsyncMock(return_value=mock_admin),
+            ):
+                with patch(
+                    "app.api.v1.skills.SKILLS_DIR",
+                    new=MagicMock(),
+                ):
+                    response = client.get(
+                        "/api/v1/skills/test_skill/files",
+                        headers=admin_auth_headers,
+                    )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "files" in data
+
+    def test_list_skill_files_not_found(self, client, admin_auth_headers, mock_get_db):
+        """Test listing files for non-existent skill."""
+        conn, cursor = mock_get_db
+
+        mock_admin = {
+            "id": 2,
+            "email": "admin@example.com",
+            "role": "admin",
+            "api_key": "admin_key",
+        }
+
+        with patch(
+            "app.api.v1.skills.skill_crud.get_by_name",
+            new=AsyncMock(return_value=None),
+        ):
+            with patch(
+                "app.api.deps.user_crud.get_by_api_key",
+                new=AsyncMock(return_value=mock_admin),
+            ):
+                response = client.get(
+                    "/api/v1/skills/nonexistent/files",
+                    headers=admin_auth_headers,
+                )
+
+        assert response.status_code == 404
+
+
+class TestSkillSync:
+    """Tests for POST /api/v1/skills/{name}/sync endpoint."""
+
+    def test_sync_skill_not_found(self, client, admin_auth_headers, mock_get_db):
+        """Test syncing non-existent skill."""
+        conn, cursor = mock_get_db
+
+        mock_admin = {
+            "id": 2,
+            "email": "admin@example.com",
+            "role": "admin",
+            "api_key": "admin_key",
+        }
+
+        with patch(
+            "app.api.v1.skills.skill_crud.get_by_name",
+            new=AsyncMock(return_value=None),
+        ):
+            with patch(
+                "app.api.deps.user_crud.get_by_api_key",
+                new=AsyncMock(return_value=mock_admin),
+            ):
+                response = client.post(
+                    "/api/v1/skills/nonexistent/sync",
+                    headers=admin_auth_headers,
+                )
+
+        assert response.status_code == 404
+
+    def test_sync_skill_folder_not_found(self, client, admin_auth_headers, mock_get_db):
+        """Test syncing skill with missing folder."""
+        conn, cursor = mock_get_db
+
+        mock_admin = {
+            "id": 2,
+            "email": "admin@example.com",
+            "role": "admin",
+            "api_key": "admin_key",
+        }
+        mock_skill = {
+            "id": 1,
+            "name": "test_skill",
+            "description": "Test skill",
+            "path": "test_skill",
+        }
+
+        with patch(
+            "app.api.v1.skills.skill_crud.get_by_name",
+            new=AsyncMock(return_value=mock_skill),
+        ):
+            with patch(
+                "app.api.deps.user_crud.get_by_api_key",
+                new=AsyncMock(return_value=mock_admin),
+            ):
+                with patch(
+                    "app.api.v1.skills.skill_crud.load_skill_folder_as_json",
+                    new=MagicMock(return_value=None),
+                ):
+                    response = client.post(
+                        "/api/v1/skills/test_skill/sync",
+                        headers=admin_auth_headers,
+                    )
+
+        assert response.status_code == 404
+
+
+class TestSkillList:
+    """Tests for GET /api/v1/skills endpoint."""
+
+    def test_list_skills_success(self, client, admin_auth_headers, mock_get_db):
+        """Test successfully listing skills."""
+        conn, cursor = mock_get_db
+
+        mock_admin = {
+            "id": 2,
+            "email": "admin@example.com",
+            "role": "admin",
+            "api_key": "admin_key",
+        }
+
+        skills_list = [
+            {
+                "id": 1,
+                "name": "skill_1",
+                "description": "First skill",
+                "path": "skill_1",
+                "status": "active",
+            },
+            {
+                "id": 2,
+                "name": "skill_2",
+                "description": "Second skill",
+                "path": "skill_2",
+                "status": "draft",
+            },
+        ]
+
+        with patch(
+            "app.api.v1.skills.skill_crud.list_all",
+            new=AsyncMock(return_value=skills_list),
+        ):
+            with patch(
+                "app.api.deps.user_crud.get_by_api_key",
+                new=AsyncMock(return_value=mock_admin),
+            ):
+                response = client.get(
+                    "/api/v1/skills",
+                    headers=admin_auth_headers,
+                )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["skills"]) == 2
+        assert data["total"] == 2
+
+    def test_list_skills_unauthorized(self, client, user_auth_headers):
+        """Test listing skills without admin privileges."""
+        mock_user = {
+            "id": 1,
+            "email": "user@example.com",
+            "role": "user",
+            "api_key": "user_key",
+        }
+
+        with patch(
+            "app.api.deps.user_crud.get_by_api_key",
+            new=AsyncMock(return_value=mock_user),
+        ):
+            response = client.get(
+                "/api/v1/skills",
+                headers=user_auth_headers,
+            )
+
+        assert response.status_code == 403
+
+
+class TestSkillContent:
+    """Tests for GET /api/v1/skills/{name}/content endpoint."""
+
+    def test_get_skill_content_success(self, client, admin_auth_headers, mock_get_db):
+        """Test successfully getting skill content."""
+        conn, cursor = mock_get_db
+
+        mock_admin = {
+            "id": 2,
+            "email": "admin@example.com",
+            "role": "admin",
+            "api_key": "admin_key",
+        }
+        mock_skill = {
+            "id": 1,
+            "name": "test_skill",
+            "description": "Test skill",
+            "path": "test_skill",
+        }
+
+        with patch(
+            "app.api.v1.skills.skill_crud.get_by_name",
+            new=AsyncMock(return_value=mock_skill),
+        ):
+            with patch(
+                "app.api.deps.user_crud.get_by_api_key",
+                new=AsyncMock(return_value=mock_admin),
+            ):
+                with patch(
+                    "app.api.v1.skills.load_skill_content",
+                    new=MagicMock(return_value="# Skill Content"),
+                ):
+                    response = client.get(
+                        "/api/v1/skills/test_skill/content",
+                        headers=admin_auth_headers,
+                    )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "content" in data
+
+    def test_get_skill_content_not_found(self, client, admin_auth_headers, mock_get_db):
+        """Test getting content for non-existent skill."""
+        conn, cursor = mock_get_db
+
+        mock_admin = {
+            "id": 2,
+            "email": "admin@example.com",
+            "role": "admin",
+            "api_key": "admin_key",
+        }
+
+        with patch(
+            "app.api.v1.skills.skill_crud.get_by_name",
+            new=AsyncMock(return_value=None),
+        ):
+            with patch(
+                "app.api.deps.user_crud.get_by_api_key",
+                new=AsyncMock(return_value=mock_admin),
+            ):
+                response = client.get(
+                    "/api/v1/skills/nonexistent/content",
+                    headers=admin_auth_headers,
+                )
+
+        assert response.status_code == 404
+
+
 class TestUpdateSkillContent:
     """Tests for PUT /api/v1/skills/{name}/content endpoint."""
 

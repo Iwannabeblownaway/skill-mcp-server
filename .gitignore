@@ -68,15 +68,8 @@ Thumbs.db
 
 # Skills - ignore user-uploaded skills, keep examples
 skills/*
-!skills/hello/
-!skills/code-review/
-!skills/data-analysis/
-!skills/api-design/
-!skills/skill-auditor/
 !skills/time-compare/
-!skills/hello/*.md
-!skills/code-review/*.md
-!skills/data-analysis/*.md
-!skills/api-design/*.md
-!skills/skill-auditor/*.md
 !skills/time-compare/*.md
+
+# Skill packages (auto-generated .skill files)
+skill_packages/

@@ -14,6 +14,12 @@ tests/
 │   ├── test_auth.py         # User-skill authorization tests
 │   ├── test_skills.py       # Skill management tests
 │   └── test_users.py        # User management tests
+├── test_mcp/                # MCP server tests
+│   ├── __init__.py
+│   └── test_server.py       # MCP tools and dependencies
+├── test_admin/              # Admin panel tests
+│   ├── __init__.py
+│   └── test_router.py       # Admin router helpers
 └── test_services/           # Service layer tests
     ├── __init__.py
     ├── test_skill_service.py # Skill service tests
@@ -54,34 +60,78 @@ python -m pytest tests/ --cov=app --cov-report=html
 
 ## Test Coverage
 
+### API Endpoints (`test_api/`)
+
+#### `test_users.py`
+- `POST /api/v1/users` - Create users (admin only)
+  - Success with user role
+  - Success with admin role
+  - Default role
+  - Unauthorized (non-admin)
+  - No authentication
+  - Invalid data
+- `GET /api/v1/users` - List users with pagination (admin only)
+  - Success
+  - Pagination
+  - Empty list
+  - Unauthorized (non-admin)
+  - Invalid page number
+  - Invalid page size
+
+#### `test_skills.py`
+- `POST /api/v1/skills/json` - Create skills (admin only)
+- `GET /api/v1/skills` - List skills (admin only)
+- `GET /api/v1/skills/{name}/dependencies` - Get skill dependencies (admin only)
+- `GET /api/v1/skills/{name}/files` - List skill files (admin only)
+- `GET /api/v1/skills/{name}/content` - Get skill content (admin only)
+- `PUT /api/v1/skills/{name}` - Update skills (admin only)
+- `PUT /api/v1/skills/{name}/content` - Update skill content (admin only)
+- `POST /api/v1/skills/{name}/sync` - Sync skill from filesystem (admin only)
+- `DELETE /api/v1/skills/{name}` - Delete skills (admin only)
+
+#### `test_logs.py`
+- `GET /api/v1/logs` - List call logs (admin only)
+  - Success
+  - Filter by user
+  - Filter by skill
+  - Filter by time range
+  - Pagination
+  - Empty list
+  - Unauthorized (non-admin)
+  - Invalid page/page_size
+
+#### `test_auth.py`
+- `POST /api/v1/user_skills` - Grant skills to users (admin only)
+- `DELETE /api/v1/user_skills` - Revoke skills from users (admin only)
+- Authentication dependencies (`get_current_user`, `verify_admin_api_key`)
+
+### MCP Server (`test_mcp/`)
+
+#### `test_server.py`
+- `MCP_CONFIG_PATTERNS` - AI client config path validation
+- `_append_deps_warning` - MCP dependency warning injection
+- `list_tools` - Tool listing with permission filtering
+- `call_tool` - Tool invocation (get_skill_index, get_skill_file, legacy tools)
+
+### Admin Panel (`test_admin/`)
+
+#### `test_router.py`
+- `_flatten_single_top_level_dir` - ZIP common prefix detection
+- `_parse_dependencies` - Dependency parsing (comma, JSON array, MCP config)
+- `redirect_with_message` - XSS protection in flash messages
+
 ### Services (`test_services/`)
 
 #### `test_skill_service.py`
 - `get_user_skills()` - Retrieve user-authorized skills
 - `check_permission()` - Verify user skill access
 - `get_skill_content()` - Get skill content with permission check
-- `log_call()` - Log skill invocations
+- `log_call()` - Log skill invocations (success, failure, denied)
 
 #### `test_user_service.py`
 - `verify_api_key()` - Validate API keys
 - `create_user()` - Create new users
 - `get_user_by_id()` - Retrieve users by ID
-
-### API Endpoints (`test_api/`)
-
-#### `test_skills.py`
-- `POST /api/v1/skills` - Create skills (admin only)
-- `PUT /api/v1/skills/{name}` - Update skills (admin only)
-- `DELETE /api/v1/skills/{name}` - Delete skills (admin only)
-
-#### `test_users.py`
-- `POST /api/v1/users` - Create users (admin only)
-- `GET /api/v1/users` - List users with pagination (admin only)
-
-#### `test_auth.py`
-- `POST /api/v1/user_skills` - Grant skills to users (admin only)
-- `DELETE /api/v1/user_skills` - Revoke skills from users (admin only)
-- Authentication dependencies (`get_current_user`, `verify_admin_api_key`)
 
 ## Fixtures (`conftest.py`)
 
@@ -125,6 +175,14 @@ python -m pytest tests/ --cov=app --cov-report=html
 4. **Comprehensive Coverage**: Tests cover success cases, failures, and edge cases
 5. **Authentication Testing**: Both user and admin role testing
 6. **Error Cases**: 401, 403, 404, 422 error scenarios covered
+
+## Known Gaps (Areas for Improvement)
+
+### Low Priority
+- **Skills file upload** - POST /api/v1/skills (file upload with multi-part form) - requires actual file mocking
+- **Admin skill management** - Status (draft/active), download package, rebuild package
+- **MCP auth middleware** - Authentication middleware tests
+- **Logs API admin panel** - Admin log viewer integration tests
 
 ## Configuration
 

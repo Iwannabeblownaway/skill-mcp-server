@@ -53,13 +53,13 @@ async def get_user_skills(conn: aiomysql.Connection, user_id: int) -> list[dict]
         user_id: User ID
 
     Returns:
-        List of skill dicts (id, name, description, path)
+        List of skill dicts (id, name, description, path, status)
     """
     import json
 
     async with conn.cursor(aiomysql.DictCursor) as cur:
         await cur.execute(
-            """SELECT s.id, s.name, s.description, s.path, s.version,
+            """SELECT s.id, s.name, s.description, s.path, s.status,
                       s.created_at, s.updated_at, s.dependencies
                FROM skills s
                INNER JOIN user_skills us ON s.id = us.skill_id

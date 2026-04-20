@@ -11,6 +11,7 @@ from app.utils.redis_client import redis_client
 from app.utils.logger import setup_logging, get_logger
 from app.api.v1 import users, skills, auth, logs
 from app.mcp.server import get_session_manager
+from app.admin.router import router as admin_router
 
 
 logger = get_logger(__name__)
@@ -84,6 +85,9 @@ app.include_router(users.router, prefix="/api/v1")
 app.include_router(skills.router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(logs.router, prefix="/api/v1")
+
+# Mount admin panel
+app.include_router(admin_router)
 
 
 @app.get("/health")

@@ -21,7 +21,7 @@ class TestCreateUser:
 
         new_user = {
             "id": 3,
-            "external_id": "user_003",
+            "user_id": "user_003",
             "username": "NewUser",
             "api_key": "generated_api_key_xyz123",
             "role": "user",
@@ -64,7 +64,7 @@ class TestCreateUser:
 
         new_admin = {
             "id": 4,
-            "external_id": "newadmin",
+            "user_id": "newadmin",
             "username": "NewAdmin",
             "api_key": "admin_api_key_xyz123",
             "role": "admin",
@@ -104,7 +104,7 @@ class TestCreateUser:
 
         new_user = {
             "id": 5,
-            "external_id": "default_user",
+            "user_id": "default_user",
             "username": "DefaultUser",
             "api_key": "api_key_default",
             "role": "user",

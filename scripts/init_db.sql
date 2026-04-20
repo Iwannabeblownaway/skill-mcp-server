@@ -13,14 +13,14 @@ CREATE TABLE IF NOT EXISTS users (
     INDEX idx_external_id (external_id)
 );
 
--- Skills table: stores skill metadata and content
+-- Skills table: stores skill metadata
 CREATE TABLE IF NOT EXISTS skills (
     id INT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(100) UNIQUE NOT NULL,
     description TEXT NOT NULL,
     path VARCHAR(500) NOT NULL,  -- Relative path to skill folder (e.g., "code-review")
-    version VARCHAR(20) DEFAULT '1.0',
-    content_json JSON,  -- JSON content of entire skill folder (files as key-value)
+    dependencies JSON,  -- MCP service URLs that this skill requires
+    status ENUM('draft', 'active') DEFAULT 'draft',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_name (name)

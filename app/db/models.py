@@ -36,7 +36,7 @@ class Skill:
     name: str
     description: str
     path: str  # Relative path to skill folder (e.g., "code-review")
-    version: str
+    dependencies: list  # MCP dependencies
     created_at: datetime
     updated_at: datetime
 
@@ -47,9 +47,9 @@ class Skill:
             name=row[1],
             description=row[2],
             path=row[3],
-            version=row[4],
-            created_at=row[5],
-            updated_at=row[6],
+            dependencies=row[4] if len(row) > 4 else [],
+            created_at=row[5] if len(row) > 5 else None,
+            updated_at=row[6] if len(row) > 6 else None,
         )
 
 
@@ -113,9 +113,8 @@ CREATE TABLE IF NOT EXISTS skills (
     name VARCHAR(100) UNIQUE NOT NULL,
     description TEXT NOT NULL,
     path VARCHAR(500) NOT NULL,  -- Relative path to skill folder
-    version VARCHAR(20) DEFAULT '1.0',
     dependencies JSON,
-    content_json JSON,
+    status ENUM('draft', 'active') DEFAULT 'draft',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_name (name)
