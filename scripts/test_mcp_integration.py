@@ -8,6 +8,7 @@ MCP Integration Tests - Skill Server
 import requests
 import json
 import time
+from requests import Response
 
 BASE_URL = "http://localhost:8000"
 ADMIN_KEY = "2rotINY-6BEbIOpHKMaQNrmVe324uJ56W0mBWTLYRFI"
@@ -31,7 +32,7 @@ def mcp_request(method, params, api_key, tool_name=None):
     return resp
 
 
-def api_request(method, endpoint, data=None, api_key=None):
+def api_request(method, endpoint, data=None, api_key=None) -> Response:
     """发送 REST API 请求"""
     url = f"{BASE_URL}{endpoint}"
     headers = {"Content-Type": "application/json", "X-API-Key": api_key or ADMIN_KEY}
@@ -42,6 +43,8 @@ def api_request(method, endpoint, data=None, api_key=None):
         return requests.post(url, json=data, headers=headers, timeout=10)
     elif method == "DELETE":
         return requests.delete(url, headers=headers, timeout=10)
+    else:
+        raise ValueError(f"Unsupported HTTP method: {method}")
 
 
 class TestResult:
@@ -190,6 +193,7 @@ def test_unauthorized_skill_access(result):
 
     # 检查返回内容是否包含错误信息
     result_text = ""
+    content: list = []
     if "result" in data:
         content = data["result"].get("content", [])
         if content and len(content) > 0:

@@ -77,7 +77,7 @@ class RedisClient:
         self,
         session_id: str,
         data: dict[str, Any],
-        ttl: Optional[int] = 3600,
+        ttl: int = 3600,
     ) -> None:
         """Store session data in Redis.
 
@@ -104,7 +104,8 @@ class RedisClient:
             True if Redis is responsive, False otherwise.
         """
         try:
-            return await self.client.ping()
+            result = await self.client.ping()  # type: ignore[misc]
+            return bool(result)
         except Exception:
             return False
 

@@ -27,6 +27,7 @@ import sys
 import tempfile
 import zipfile
 from pathlib import Path
+from typing import Optional
 import requests
 
 
@@ -56,7 +57,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def get_skill_name(path: Path, name: str = None) -> str:
+def get_skill_name(path: Path, name: Optional[str] = None) -> str:
     """从路径推断 skill 名称"""
     if name:
         return name
@@ -83,7 +84,7 @@ def create_zip_from_folder(folder_path: Path) -> str:
 
 
 def upload_single_file(
-    base_url: str, headers: str, filepath: str, skill_name: str, description: str = ""
+    base_url: str, headers: dict, filepath: str, skill_name: str, description: str = ""
 ):
     """上传单个文件"""
     print(f"\n[上传] 单文件: {filepath}")
@@ -124,7 +125,7 @@ def upload_single_file(
         return None
 
 
-def upload_archive(base_url: str, headers: str, filepath: str):
+def upload_archive(base_url: str, headers: dict, filepath: str):
     """上传压缩包"""
     filename = Path(filepath).name
     print(f"\n[上传] 压缩包: {filepath}")
@@ -151,7 +152,7 @@ def upload_archive(base_url: str, headers: str, filepath: str):
         return None
 
 
-def update_skill(base_url: str, headers: str, skill_name: str, filepath: str):
+def update_skill(base_url: str, headers: dict, skill_name: str, filepath: str):
     """更新已存在的 skill"""
     print(f"\n[更新] {skill_name} <- {filepath}")
 

@@ -21,25 +21,36 @@ from app.services.skill_service import extract_urls_from_mcp_config
 
 router = APIRouter(prefix="/skills", tags=["skills"])
 
+# Zip bomb protection limits
+MAX_EXTRACTED_SIZE = 100 * 1024 * 1024  # 100MB total extracted size
+MAX_FILE_COUNT = 1000  # Maximum number of files
+MAX_COMPRESSION_RATIO = 100  # Maximum compression ratio (extracted/compressed)
+
 
 def _extract_archive(content: bytes, skill_dir: Path) -> list[str]:
-    """Extract archive content to skill folder.
+    """Extract archive content to skill folder with zip bomb protection.
 
     Supports: .zip, .tar, .tar.gz, .tgz, .tar.bz2, .tar.xz, .gz, .bz2, .xz
 
     Returns list of extracted filenames.
-    Raises HTTPException on path traversal attempts.
+    Raises HTTPException on path traversal attempts or zip bomb detection.
     """
     extracted_files = []
+    total_extracted_size = 0
     skill_dir.mkdir(parents=True, exist_ok=True)
     skill_dir_resolved = skill_dir.resolve()
 
-    def _safe_extract(filename: str, write_func) -> bool:
+    # Store file sizes for compression ratio check
+    file_sizes = []
+
+    def _safe_extract(filename: str, file_size: int, write_func) -> bool:
         """Safely extract a file, validating path is within skill_dir.
 
         Returns True if extracted, False if skipped.
-        Raises HTTPException on path traversal.
+        Raises HTTPException on path traversal or size limits.
         """
+        nonlocal total_extracted_size
+
         # Strip any path components - only allow filename
         if "/" in filename:
             filename = filename.split("/")[-1]
@@ -49,6 +60,27 @@ def _extract_archive(content: bytes, skill_dir: Path) -> list[str]:
         # Reject empty or hidden filenames
         if not filename or filename.startswith("."):
             return False
+
+        # Check file size limit per file
+        if file_size > MAX_EXTRACTED_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"File too large: {filename} ({file_size} bytes). Maximum per file: {MAX_EXTRACTED_SIZE} bytes",
+            )
+
+        # Check total size limit
+        if total_extracted_size + file_size > MAX_EXTRACTED_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Archive would extract to {total_extracted_size + file_size} bytes, exceeding limit of {MAX_EXTRACTED_SIZE} bytes",
+            )
+
+        # Check file count limit
+        if len(extracted_files) >= MAX_FILE_COUNT:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Too many files in archive ({len(extracted_files) + 1}), maximum is {MAX_FILE_COUNT}",
+            )
 
         target_path = (skill_dir / filename).resolve()
 
@@ -60,18 +92,34 @@ def _extract_archive(content: bytes, skill_dir: Path) -> list[str]:
             )
 
         write_func(target_path)
+        total_extracted_size += file_size
         extracted_files.append(filename)
+        file_sizes.append(file_size)
         return True
 
     # Try zip first
     if zipfile.is_zipfile(io.BytesIO(content)):
         with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
+            # Check compressed size vs uncompressed size for zip bomb detection
+            total_compressed_size = sum(info.compress_size for info in zf.infolist() if not info.is_dir())
+            total_uncompressed_size = sum(info.file_size for info in zf.infolist() if not info.is_dir())
+
+            # Check compression ratio (potential zip bomb)
+            if total_compressed_size > 0:
+                compression_ratio = total_uncompressed_size / total_compressed_size
+                if compression_ratio > MAX_COMPRESSION_RATIO:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Suspicious compression ratio detected: {compression_ratio:.1f}x. Maximum allowed: {MAX_COMPRESSION_RATIO}x",
+                    )
+
             for file_info in zf.infolist():
                 if file_info.is_dir():
                     continue
                 _safe_extract(
                     file_info.filename,
-                    lambda p: p.write_bytes(zf.read(file_info.filename)),
+                    file_info.file_size,
+                    lambda p, zf=zf, fi=file_info: p.write_bytes(zf.read(fi.filename)),
                 )
         return extracted_files
 
@@ -83,9 +131,11 @@ def _extract_archive(content: bytes, skill_dir: Path) -> list[str]:
                     extracted_content = tf.extractfile(member)
                     if extracted_content is None:
                         continue
+                    content_bytes = extracted_content.read()
                     _safe_extract(
                         member.name,
-                        lambda p, c=extracted_content.read(): p.write_bytes(c),
+                        len(content_bytes),
+                        lambda p, c=content_bytes: p.write_bytes(c),
                     )
             return extracted_files
     except tarfile.TarError:
@@ -93,21 +143,55 @@ def _extract_archive(content: bytes, skill_dir: Path) -> list[str]:
 
     # Try single compressed file (.gz, .bz2, .xz without tar)
     filename = None
+    compressed_size = len(content)
+
     if content[:2] == b"\x1f\x8b":  # gzip
         import gzip
 
+        decompressed = gzip.decompress(content)
+        decompressed_size = len(decompressed)
+
+        # Check compression ratio
+        if compressed_size > 0 and decompressed_size / compressed_size > MAX_COMPRESSION_RATIO:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Suspicious compression ratio: {decompressed_size / compressed_size:.1f}x. Maximum allowed: {MAX_COMPRESSION_RATIO}x",
+            )
+
         filename = "extracted_file"
-        _safe_extract(filename, lambda p: p.write_bytes(gzip.decompress(content)))
+        _safe_extract(filename, decompressed_size, lambda p: p.write_bytes(decompressed))
+
     elif content[:2] == b"BZ":  # bzip2
         import bz2
 
+        decompressed = bz2.decompress(content)
+        decompressed_size = len(decompressed)
+
+        # Check compression ratio
+        if compressed_size > 0 and decompressed_size / compressed_size > MAX_COMPRESSION_RATIO:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Suspicious compression ratio: {decompressed_size / compressed_size:.1f}x. Maximum allowed: {MAX_COMPRESSION_RATIO}x",
+            )
+
         filename = "extracted_file"
-        _safe_extract(filename, lambda p: p.write_bytes(bz2.decompress(content)))
+        _safe_extract(filename, decompressed_size, lambda p: p.write_bytes(decompressed))
+
     elif content[:2] == b"FD":  # xz
         import lzma
 
+        decompressed = lzma.decompress(content)
+        decompressed_size = len(decompressed)
+
+        # Check compression ratio
+        if compressed_size > 0 and decompressed_size / compressed_size > MAX_COMPRESSION_RATIO:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Suspicious compression ratio: {decompressed_size / compressed_size:.1f}x. Maximum allowed: {MAX_COMPRESSION_RATIO}x",
+            )
+
         filename = "extracted_file"
-        _safe_extract(filename, lambda p: p.write_bytes(lzma.decompress(content)))
+        _safe_extract(filename, decompressed_size, lambda p: p.write_bytes(decompressed))
 
     if not extracted_files:
         raise HTTPException(

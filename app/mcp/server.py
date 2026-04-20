@@ -10,12 +10,12 @@ Based on MCP Python SDK streamable_http transport.
 
 import logging
 from contextvars import ContextVar
-from typing import Any
+from typing import Any, Iterable
 
 from starlette.requests import Request
 from mcp.server import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
-from mcp.types import TextContent, Tool as MCPTool
+from mcp.types import TextContent, Tool as MCPTool, GetPromptResult
 
 from app.services.user_service import verify_api_key
 
@@ -411,80 +411,133 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     Returns:
         List of TextContent with the tool execution result.
     """
+    import time
+    import json
+
     from app.services.skill_service import (
         get_skill_content_json as svc_get_skill_content_json,
         get_skill_index as svc_get_skill_index,
         get_skill_file as svc_get_skill_file,
+        log_call as svc_log_call,
     )
-    import json
 
     # Get current user from context
     user = current_user.get()
     user_id = user.get("id") if user else None
 
-    if name == "get_skill_index":
-        skill_name = arguments.get("skill_name", "")
-        if not skill_name:
-            return [TextContent(type="text", text="Error: skill_name is required")]
-        try:
-            index_data, error = await svc_get_skill_index(
-                user_id=user_id, skill_name=skill_name
-            )
-            if error:
-                return [TextContent(type="text", text=f"Error: {error}")]
-            deps = await _get_skill_dependencies(skill_name)
-            json_str = json.dumps(index_data, ensure_ascii=False, indent=2)
-            result = _append_deps_warning(skill_name, deps, json_str)
-            return [TextContent(type="text", text=result)]
-        except Exception as e:
-            logger.error(f"Error calling get_skill_index: {e}")
-            return [TextContent(type="text", text=f"Error: {str(e)}")]
+    # If no user, return error (should not happen if auth middleware works)
+    if user_id is None:
+        return [TextContent(type="text", text="Error: Authentication required")]
 
-    elif name == "get_skill_file":
-        skill_name = arguments.get("skill_name", "")
-        file_path = arguments.get("file_path", "")
-        if not skill_name:
-            return [TextContent(type="text", text="Error: skill_name is required")]
-        if not file_path:
-            return [TextContent(type="text", text="Error: file_path is required")]
-        try:
-            content, error = await svc_get_skill_file(
-                user_id=user_id, skill_name=skill_name, file_path=file_path
-            )
-            if error:
-                return [TextContent(type="text", text=f"Error: {error}")]
-            deps = await _get_skill_dependencies(skill_name)
-            result = _append_deps_warning(skill_name, deps, content)
-            return [TextContent(type="text", text=result)]
-        except Exception as e:
-            logger.error(f"Error calling get_skill_file: {e}")
-            return [TextContent(type="text", text=f"Error: {str(e)}")]
+    # Track timing and determine skill name for logging
+    start_time = time.time()
+    skill_name = None
+    status = "success"
+    error_msg = None
 
-    else:
-        # Legacy: get_skill_{name} - returns full folder JSON
-        if name.startswith("get_skill_"):
-            skill_name = name[len("get_skill_") :]
+    try:
+        if name == "get_skill_index":
+            skill_name = arguments.get("skill_name", "")
+            if not skill_name:
+                error_msg = "skill_name is required"
+                status = "failure"
+                return [TextContent(type="text", text=f"Error: {error_msg}")]
+            try:
+                index_data, error = await svc_get_skill_index(
+                    user_id=user_id, skill_name=skill_name
+                )
+                if error:
+                    error_msg = error
+                    status = "failure"
+                    return [TextContent(type="text", text=f"Error: {error}")]
+                deps = await _get_skill_dependencies(skill_name)
+                json_str = json.dumps(index_data, ensure_ascii=False, indent=2)
+                result = _append_deps_warning(skill_name, deps, json_str)
+                return [TextContent(type="text", text=result)]
+            except Exception as e:
+                logger.error(f"Error calling get_skill_index: {e}")
+                error_msg = str(e)
+                status = "failure"
+                return [TextContent(type="text", text=f"Error: {error_msg}")]
+
+        elif name == "get_skill_file":
+            skill_name = arguments.get("skill_name", "")
+            file_path = arguments.get("file_path", "")
+            if not skill_name:
+                error_msg = "skill_name is required"
+                status = "failure"
+                return [TextContent(type="text", text=f"Error: {error_msg}")]
+            if not file_path:
+                error_msg = "file_path is required"
+                status = "failure"
+                return [TextContent(type="text", text=f"Error: {error_msg}")]
+            try:
+                content, error = await svc_get_skill_file(
+                    user_id=user_id, skill_name=skill_name, file_path=file_path
+                )
+                if error:
+                    error_msg = error
+                    status = "failure"
+                    return [TextContent(type="text", text=f"Error: {error}")]
+                if content is None:
+                    error_msg = "Failed to load skill file content"
+                    status = "failure"
+                    return [TextContent(type="text", text=f"Error: {error_msg}")]
+                deps = await _get_skill_dependencies(skill_name)
+                result = _append_deps_warning(skill_name, deps, content)
+                return [TextContent(type="text", text=result)]
+            except Exception as e:
+                logger.error(f"Error calling get_skill_file: {e}")
+                error_msg = str(e)
+                status = "failure"
+                return [TextContent(type="text", text=f"Error: {error_msg}")]
+
         else:
-            skill_name = name
+            # Legacy: get_skill_{name} - returns full folder JSON
+            if name.startswith("get_skill_"):
+                skill_name = name[len("get_skill_") :]
+            else:
+                skill_name = name
 
-        skill_name = arguments.get("skill_name", skill_name)
+            skill_name = arguments.get("skill_name", skill_name)
 
-        if not skill_name:
-            return [TextContent(type="text", text="Error: Skill name is required")]
+            if not skill_name:
+                error_msg = "Skill name is required"
+                status = "failure"
+                return [TextContent(type="text", text=f"Error: {error_msg}")]
 
-        try:
-            content_json, error = await svc_get_skill_content_json(
-                user_id=user_id, skill_name=skill_name
-            )
-            if error:
-                return [TextContent(type="text", text=f"Error: {error}")]
-            deps = await _get_skill_dependencies(skill_name)
-            json_str = json.dumps(content_json, ensure_ascii=False, indent=2)
-            result = _append_deps_warning(skill_name, deps, json_str)
-            return [TextContent(type="text", text=result)]
-        except Exception as e:
-            logger.error(f"Error calling tool {name}: {e}")
-            return [TextContent(type="text", text=f"Error: {str(e)}")]
+            try:
+                content_json, error = await svc_get_skill_content_json(
+                    user_id=user_id, skill_name=skill_name
+                )
+                if error:
+                    error_msg = error
+                    status = "failure"
+                    return [TextContent(type="text", text=f"Error: {error}")]
+                deps = await _get_skill_dependencies(skill_name)
+                json_str = json.dumps(content_json, ensure_ascii=False, indent=2)
+                result = _append_deps_warning(skill_name, deps, json_str)
+                return [TextContent(type="text", text=result)]
+            except Exception as e:
+                logger.error(f"Error calling tool {name}: {e}")
+                error_msg = str(e)
+                status = "failure"
+                return [TextContent(type="text", text=f"Error: {error_msg}")]
+
+    finally:
+        # Always log the call, even on errors
+        if skill_name and user_id:
+            duration_ms = int((time.time() - start_time) * 1000)
+            try:
+                await svc_log_call(
+                    user_id=user_id,
+                    skill_name=skill_name,
+                    status=status,
+                    error_msg=error_msg or "",
+                    duration_ms=duration_ms,
+                )
+            except Exception as e:
+                logger.error(f"Failed to log skill call: {e}")
 
 
 @mcp_server.list_resources()
@@ -500,7 +553,7 @@ async def list_resources() -> list:
 
 
 @mcp_server.read_resource()
-async def read_resource(uri: str) -> str:
+async def read_resource(uri: Any) -> Any:
     """Handle resources/read MCP method.
 
     This server does not support resource reading.
@@ -527,7 +580,7 @@ async def list_prompts() -> list:
 
 
 @mcp_server.get_prompt()
-async def get_prompt(name: str, arguments: dict[str, Any] | None) -> str:
+async def get_prompt(name: str, arguments: dict[str, Any] | None) -> GetPromptResult:
     """Handle prompts/get MCP method.
 
     This server does not support prompt retrieval.
@@ -537,9 +590,11 @@ async def get_prompt(name: str, arguments: dict[str, Any] | None) -> str:
         arguments: Optional prompt arguments.
 
     Returns:
-        Error message.
+        Never returns - always raises NotImplementedError.
+    Raises:
+        NotImplementedError: Prompt retrieval is not supported.
     """
-    return f"Error: Prompt retrieval not supported. Name: {name}"
+    raise NotImplementedError(f"Prompt retrieval not supported. Name: {name}")
 
 
 def get_mcp_server() -> Server:

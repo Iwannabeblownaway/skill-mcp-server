@@ -174,6 +174,7 @@ def main():
     args = parser.parse_args()
 
     api_key_length = int(os.getenv("API_KEY_LENGTH", "32"))
+    conn = None
 
     try:
         print("Connecting to database...")
@@ -208,7 +209,7 @@ def main():
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
     finally:
-        if "conn" in locals():
+        if conn is not None:
             conn.close()
 
 

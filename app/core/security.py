@@ -67,7 +67,7 @@ def verify_api_key(api_key: str, hashed_key: str) -> bool:
     Returns:
         True if the key matches the hash, False otherwise
     """
-    return hash_api_key(api_key) == hashed_key
+    return hmac.compare_digest(hash_api_key(api_key), hashed_key)
 
 
 def hash_password(password: str, salt: Optional[str] = None) -> tuple[str, str]:

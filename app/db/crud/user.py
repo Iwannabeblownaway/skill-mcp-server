@@ -69,7 +69,7 @@ async def create(
     role: str = "user",
     api_key_length: int = 32,
 ) -> dict:
-    """Create a new user.
+    """Create a new user with generated API key.
 
     Args:
         conn: Database connection

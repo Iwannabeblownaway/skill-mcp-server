@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import verify_admin_api_key
 from app.db.session import get_db
+from app.db.crud import call_log as call_log_crud
 
 router = APIRouter(prefix="/logs", tags=["logs"])
 
@@ -25,9 +26,22 @@ async def list_call_logs(
     admin: dict = Depends(verify_admin_api_key),
 ) -> dict:
     """List call logs with optional filters."""
+    offset = (page - 1) * page_size
+
+    async with get_db() as conn:
+        logs, total = await call_log_crud.list_logs(
+            conn,
+            user_id=user_id,
+            skill_name=skill_name,
+            start_time=start_time,
+            end_time=end_time,
+            limit=page_size,
+            offset=offset,
+        )
+
     return {
-        "logs": [],
-        "total": 0,
+        "logs": logs,
+        "total": total,
         "page": page,
         "page_size": page_size,
     }

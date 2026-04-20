@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Register colleague and leader skills to database."""
 
+import sys
 import pymysql
 from datetime import datetime
 
@@ -31,6 +32,9 @@ with conn.cursor() as cursor:
     # Get admin user id
     cursor.execute("SELECT id FROM users WHERE role = 'admin' LIMIT 1")
     admin = cursor.fetchone()
+    if not admin:
+        print("Error: No admin user found. Please run seed_data.py first.")
+        sys.exit(1)
     admin_id = admin["id"]
 
     for skill in new_skills:
