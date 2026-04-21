@@ -79,6 +79,7 @@ services:
       - "8000:8000"
     volumes:
       - ./logs:/app/logs
+      - ./skills:/app/skills
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
