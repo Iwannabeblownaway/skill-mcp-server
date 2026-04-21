@@ -179,7 +179,6 @@ class TestUpdateSkill:
             "name": "test_skill",
             "description": "Updated description",
             "path": "test_skill",
-            "version": "1.1",
             "created_at": "2024-01-01T00:00:00",
             "updated_at": "2024-01-02T00:00:00",
         }
@@ -196,14 +195,12 @@ class TestUpdateSkill:
                     "/api/v1/skills/test_skill",
                     json={
                         "description": "Updated description",
-                        "version": "1.1",
                     },
                     headers=admin_auth_headers,
                 )
 
         assert response.status_code == 200
         assert response.json()["description"] == "Updated description"
-        assert response.json()["version"] == "1.1"
 
     def test_update_skill_not_found(self, client, admin_auth_headers, mock_get_db):
         """Test updating a non-existent skill."""
@@ -269,7 +266,6 @@ class TestUpdateSkill:
             "name": "test_skill",
             "description": "Only description updated",
             "path": "test_skill",
-            "version": "1.0",
             "created_at": "2024-01-01T00:00:00",
             "updated_at": "2024-01-02T00:00:00",
         }
@@ -289,6 +285,55 @@ class TestUpdateSkill:
                 )
 
         assert response.status_code == 200
+
+    def test_update_skill_with_mcp_config(self, client, admin_auth_headers, mock_get_db):
+        """Test updating skill with mcp_config accepts the request."""
+        mock_user = {
+            "id": 2,
+            "email": "admin@example.com",
+            "role": "admin",
+            "api_key": "admin_key",
+        }
+
+        updated_skill = {
+            "id": 1,
+            "name": "test_skill",
+            "description": "Test skill with MCP deps",
+            "path": "test_skill",
+            "dependencies": ["https://mcp.sorftime.com"],
+            "created_at": "2024-01-01T00:00:00",
+            "updated_at": "2024-01-02T00:00:00",
+        }
+
+        mcp_config = {
+            "mcpServers": {
+                "sorftime": {
+                    "url": "https://mcp.sorftime.com",
+                    "headers": {"Authorization": "Bearer test-token"}
+                }
+            }
+        }
+
+        with patch(
+            "app.api.v1.skills.skill_crud.update",
+            new=AsyncMock(return_value=updated_skill),
+        ):
+            with patch(
+                "app.api.deps.user_crud.get_by_api_key",
+                new=AsyncMock(return_value=mock_user),
+            ):
+                response = client.put(
+                    "/api/v1/skills/test_skill",
+                    json={"description": "Test skill with MCP deps", "mcp_config": mcp_config},
+                    headers=admin_auth_headers,
+                )
+
+        assert response.status_code == 200
+        # Verify the skill was updated successfully
+        result = response.json()
+        assert result["description"] == "Test skill with MCP deps"
+        # Note: dependencies are extracted by the API and passed to crud.update
+        # The crud.update mock returns the dependencies above
 
 
 class TestDeleteSkill:
@@ -523,72 +568,6 @@ class TestSkillFiles:
                     "/api/v1/skills/nonexistent/files",
                     headers=admin_auth_headers,
                 )
-
-        assert response.status_code == 404
-
-
-class TestSkillSync:
-    """Tests for POST /api/v1/skills/{name}/sync endpoint."""
-
-    def test_sync_skill_not_found(self, client, admin_auth_headers, mock_get_db):
-        """Test syncing non-existent skill."""
-        conn, cursor = mock_get_db
-
-        mock_admin = {
-            "id": 2,
-            "email": "admin@example.com",
-            "role": "admin",
-            "api_key": "admin_key",
-        }
-
-        with patch(
-            "app.api.v1.skills.skill_crud.get_by_name",
-            new=AsyncMock(return_value=None),
-        ):
-            with patch(
-                "app.api.deps.user_crud.get_by_api_key",
-                new=AsyncMock(return_value=mock_admin),
-            ):
-                response = client.post(
-                    "/api/v1/skills/nonexistent/sync",
-                    headers=admin_auth_headers,
-                )
-
-        assert response.status_code == 404
-
-    def test_sync_skill_folder_not_found(self, client, admin_auth_headers, mock_get_db):
-        """Test syncing skill with missing folder."""
-        conn, cursor = mock_get_db
-
-        mock_admin = {
-            "id": 2,
-            "email": "admin@example.com",
-            "role": "admin",
-            "api_key": "admin_key",
-        }
-        mock_skill = {
-            "id": 1,
-            "name": "test_skill",
-            "description": "Test skill",
-            "path": "test_skill",
-        }
-
-        with patch(
-            "app.api.v1.skills.skill_crud.get_by_name",
-            new=AsyncMock(return_value=mock_skill),
-        ):
-            with patch(
-                "app.api.deps.user_crud.get_by_api_key",
-                new=AsyncMock(return_value=mock_admin),
-            ):
-                with patch(
-                    "app.api.v1.skills.skill_crud.load_skill_folder_as_json",
-                    new=MagicMock(return_value=None),
-                ):
-                    response = client.post(
-                        "/api/v1/skills/test_skill/sync",
-                        headers=admin_auth_headers,
-                    )
 
         assert response.status_code == 404
 

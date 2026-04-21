@@ -307,7 +307,6 @@ async def create_skill_from_file(
             name=skill_name,
             description=description,
             path=skill_name,
-            version="1.0",
             dependencies=dependencies,
         )
 
@@ -375,7 +374,6 @@ async def create_skill_from_json(
             name=skill_data.name,
             description=skill_data.description,
             path=skill_data.name,
-            version=skill_data.version or "1.0",
             dependencies=dependencies,
         )
 
@@ -395,13 +393,23 @@ async def update_existing_skill(
     skill_data: SkillUpdate,
     admin: dict = Depends(verify_admin_api_key),
 ) -> SkillResponse:
-    """Update skill metadata (not content)."""
+    """Update skill metadata (not content).
+
+    Supports updating:
+    - description: Skill description
+    - mcp_config: MCP server configuration (will extract URLs as dependencies)
+    """
+    # Extract dependencies from mcp_config if provided
+    dependencies = None
+    if skill_data.mcp_config:
+        dependencies = extract_urls_from_mcp_config(skill_data.mcp_config)
+
     async with get_db() as conn:
         skill = await skill_crud.update(
             conn,
             name=name,
             description=skill_data.description,
-            version=skill_data.version,
+            dependencies=dependencies,
         )
 
     if skill is None:
@@ -515,53 +523,6 @@ async def upload_skill_content(
         "name": name,
         "extracted_files": extracted_files,
         "file_count": len(extracted_files),
-    }
-
-
-# ==================== Sync ====================
-
-
-@router.post(
-    "/{name}/sync",
-    summary="Sync skill from filesystem to database",
-)
-async def sync_skill_from_filesystem(
-    name: str,
-    admin: dict = Depends(verify_admin_api_key),
-) -> dict:
-    """Sync skill content from filesystem folder to database JSON.
-
-    Reads all files from skills/{name}/ folder and stores them as JSON in DB.
-    Use this after editing skill files in the filesystem.
-    """
-    async with get_db() as conn:
-        skill = await skill_crud.get_by_name(conn, name)
-
-    if skill is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Skill '{name}' not found",
-        )
-
-    # Load entire folder as JSON
-    folder_content = skill_crud.load_skill_folder_as_json(skill["path"])
-    if folder_content is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Skill folder not found at {skill['path']}",
-        )
-
-    # Update database
-    async with get_db() as conn:
-        await skill_crud.update_content_json(conn, name, folder_content)
-
-    file_count = len(folder_content)
-    return {
-        "name": name,
-        "path": skill["path"],
-        "files_synced": file_count,
-        "files": list(folder_content.keys()),
-        "message": f"Successfully synced {file_count} files from filesystem to database",
     }
 
 

@@ -11,7 +11,6 @@ class SkillCreate(BaseModel):
 
     name: str = Field(..., description="Unique skill name")
     description: str = Field(..., description="Skill description")
-    version: Optional[str] = Field("1.0", description="Skill version")
     mcp_config: Optional[dict] = Field(
         None, description="MCP server configuration for dependencies"
     )
@@ -22,7 +21,9 @@ class SkillUpdate(BaseModel):
     """Model for updating an existing skill."""
 
     description: Optional[str] = Field(None, description="Skill description")
-    version: Optional[str] = Field(None, description="Skill version")
+    mcp_config: Optional[dict] = Field(
+        None, description="MCP server configuration for dependencies"
+    )
     # Content updates go to filesystem directly
 
 
@@ -33,7 +34,6 @@ class SkillResponse(BaseModel):
     name: str
     description: str
     path: str  # Relative path to skill folder
-    version: str
     dependencies: Optional[list[str]] = Field(default_factory=list)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

@@ -331,16 +331,29 @@ def client(app):
     """
     from unittest.mock import AsyncMock, MagicMock, patch
     from contextlib import asynccontextmanager
+    import asyncio
 
-    # Create a mock context manager that does nothing
+    # Create a mock context manager that properly handles lifespan
     @asynccontextmanager
     async def mock_run():
+        # Mock the session manager running - just yield and cleanup happens normally
         yield
+
+    # Mock DatabasePool to avoid real DB connections
+    class MockPool:
+        async def acquire(self):
+            return MagicMock()
+        async def close(self):
+            pass
+        async def wait_closed(self):
+            pass
 
     # Patch session_manager.run to use our mock
     with patch("app.mcp.server.session_manager.run", mock_run):
-        with TestClient(app) as test_client:
-            yield test_client
+        with patch("app.db.session.DatabasePool._pool", MockPool()):
+            with patch("app.db.session.DatabasePool.get_pool", new=AsyncMock(return_value=MockPool())):
+                with TestClient(app) as test_client:
+                    yield test_client
 
 
 # ==================== Authentication Headers ====================

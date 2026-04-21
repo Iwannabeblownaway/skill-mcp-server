@@ -9,6 +9,7 @@ from app.mcp.server import (
     list_tools,
     _get_skill_dependencies,
     _append_deps_warning,
+    _is_permission_denied,
     MCP_CONFIG_PATTERNS,
 )
 
@@ -80,6 +81,34 @@ class TestAppendDepsWarning:
         assert "opencode" in result.lower()
         assert "cline" in result.lower()
         assert "continue" in result.lower()
+
+
+class TestIsPermissionDenied:
+    """Tests for _is_permission_denied helper function."""
+
+    def test_permission_denied_variations(self):
+        """Various 'Permission denied' variations return True."""
+        assert _is_permission_denied("Permission denied") is True
+        assert _is_permission_denied("permission denied") is True
+        assert _is_permission_denied("PERMISSION DENIED") is True
+        assert _is_permission_denied("User permission denied") is True
+        assert _is_permission_denied("Skill permission denied") is True
+
+    def test_non_permission_errors(self):
+        """Non-permission errors return False."""
+        assert _is_permission_denied(None) is False
+        assert _is_permission_denied("") is False
+        assert _is_permission_denied("Skill not found") is False
+        assert _is_permission_denied("File not found") is False
+        assert _is_permission_denied("Invalid input") is False
+        assert _is_permission_denied("Something went wrong") is False
+
+    def test_permission_in_other_contexts(self):
+        """Permission as part of other words should not match."""
+        # "No permission to access" does NOT match "permission denied" exactly
+        assert _is_permission_denied("No permission to access") is False
+        # Edge case: "permission" without "denied"
+        assert _is_permission_denied("User has permission") is False
 
 
 class TestCallTool:
@@ -302,6 +331,53 @@ class TestCallTool:
 
         assert len(result) == 1
         assert "Error: Permission denied" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_permission_denied_sets_status_denied(self):
+        """Permission denied error sets status='denied' in log_call."""
+        with patch("app.mcp.server.current_user") as mock_user_ctx:
+            mock_user_ctx.get.return_value = {"id": 1, "role": "user"}
+            with patch(
+                "app.services.skill_service.get_skill_index",
+                new=AsyncMock(return_value=(None, "Permission denied")),
+            ):
+                with patch(
+                    "app.services.skill_service.log_call",
+                    new=AsyncMock(),
+                ) as mock_log:
+                    result = await call_tool(
+                        name="get_skill_index",
+                        arguments={"skill_name": "forbidden-skill"},
+                    )
+
+                    # Verify log_call was called with status="denied"
+                    mock_log.assert_called_once()
+                    call_kwargs = mock_log.call_args.kwargs
+                    assert call_kwargs["status"] == "denied"
+                    assert call_kwargs["skill_name"] == "forbidden-skill"
+
+    @pytest.mark.asyncio
+    async def test_other_errors_set_status_failure(self):
+        """Non-permission errors set status='failure' in log_call."""
+        with patch("app.mcp.server.current_user") as mock_user_ctx:
+            mock_user_ctx.get.return_value = {"id": 1, "role": "user"}
+            with patch(
+                "app.services.skill_service.get_skill_index",
+                new=AsyncMock(return_value=(None, "Skill not found")),
+            ):
+                with patch(
+                    "app.services.skill_service.log_call",
+                    new=AsyncMock(),
+                ) as mock_log:
+                    result = await call_tool(
+                        name="get_skill_index",
+                        arguments={"skill_name": "nonexistent"},
+                    )
+
+                    # Verify log_call was called with status="failure"
+                    mock_log.assert_called_once()
+                    call_kwargs = mock_log.call_args.kwargs
+                    assert call_kwargs["status"] == "failure"
 
 
 class TestListTools:

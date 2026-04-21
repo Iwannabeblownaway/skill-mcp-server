@@ -240,6 +240,13 @@ async def _get_skill_dependencies(skill_name: str) -> list[str]:
         return []
 
 
+def _is_permission_denied(error: str | None) -> bool:
+    """Check if error indicates permission denied."""
+    if not error:
+        return False
+    return "permission denied" in error.lower()
+
+
 # Client detection patterns for MCP config paths
 MCP_CONFIG_PATTERNS = {
     "opencode": {
@@ -454,7 +461,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 )
                 if error:
                     error_msg = error
-                    status = "failure"
+                    status = "denied" if _is_permission_denied(error) else "failure"
                     return [TextContent(type="text", text=f"Error: {error}")]
                 deps = await _get_skill_dependencies(skill_name)
                 json_str = json.dumps(index_data, ensure_ascii=False, indent=2)
@@ -483,7 +490,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 )
                 if error:
                     error_msg = error
-                    status = "failure"
+                    status = "denied" if _is_permission_denied(error) else "failure"
                     return [TextContent(type="text", text=f"Error: {error}")]
                 if content is None:
                     error_msg = "Failed to load skill file content"
@@ -518,7 +525,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 )
                 if error:
                     error_msg = error
-                    status = "failure"
+                    status = "denied" if _is_permission_denied(error) else "failure"
                     return [TextContent(type="text", text=f"Error: {error}")]
                 deps = await _get_skill_dependencies(skill_name)
                 json_str = json.dumps(content_json, ensure_ascii=False, indent=2)

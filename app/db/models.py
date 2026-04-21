@@ -37,8 +37,8 @@ class Skill:
     description: str
     path: str  # Relative path to skill folder (e.g., "code-review")
     dependencies: list  # MCP dependencies
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
 
     @classmethod
     def from_row(cls, row: tuple) -> "Skill":

@@ -126,16 +126,16 @@ def _parse_dependencies(dependencies_input: str) -> list:
     Supports:
     - Comma-separated: "dep1,dep2,dep3"
     - JSON array: '["dep1", "dep2"]'
-    - MCP config JSON: '{"mcpServers": {"name": {...}}}'
+    - MCP config JSON: '{"mcpServers": {"name": {"url": "https://..."}}}'
+      Extracts base URLs (without query params) from the config.
 
     Args:
         dependencies_input: Raw input string
 
     Returns:
-        List of dependency names/URLs
+        List of dependency URLs (extracted from MCP config) or names
     """
     import json
-    import re
 
     if not dependencies_input or not dependencies_input.strip():
         return []
@@ -151,17 +151,86 @@ def _parse_dependencies(dependencies_input: str) -> list:
         except json.JSONDecodeError:
             pass
 
-    # Try full MCP config JSON
+    # Try full MCP config JSON - extract URLs properly
     if dependencies_input.startswith("{"):
         try:
             config = json.loads(dependencies_input)
-            if "mcpServers" in config and isinstance(config["mcpServers"], dict):
-                return list(config["mcpServers"].keys())
+            # Use the same extraction logic as skill_service
+            urls = _extract_urls_from_mcp_config(config)
+            if urls:
+                return urls
         except json.JSONDecodeError:
             pass
 
     # Fall back to comma-separated
     return [d.strip() for d in dependencies_input.split(",") if d.strip()]
+
+
+def _extract_urls_from_mcp_config(mcp_config: dict) -> list:
+    """Extract base URLs from MCP config, removing query parameters.
+
+    Handles flexible formats:
+    - Simple URL strings: {"server-name": "https://..."}
+    - Object with url field: {"server-name": {"url": "https://..."}}
+    - Nested mcpServers wrapper: {"mcpServers": {"server": {...}}}
+    - Various url field names: url, baseUrl, remote_url, endpoint, server_url, uri
+    """
+    from urllib.parse import urlparse
+
+    URL_FIELD_NAMES = ("url", "baseUrl", "remote_url", "endpoint", "server_url", "uri")
+
+    def _extract_from_value(value):
+        if isinstance(value, str):
+            _add_url(value)
+        elif isinstance(value, dict):
+            url = None
+            for field in URL_FIELD_NAMES:
+                if field in value:
+                    url = value[field]
+                    break
+            if url and isinstance(url, str):
+                _add_url(url)
+            elif not url:
+                for v in value.values():
+                    _extract_from_value(v)
+        elif isinstance(value, list):
+            for item in value:
+                _extract_from_value(item)
+
+    def _add_url(url: str) -> None:
+        if not url or not isinstance(url, str):
+            return
+        url = url.strip().rstrip("/")
+        if not url.startswith(("http://", "https://", "//")):
+            return
+        if url.startswith("//"):
+            url = "https:" + url
+        try:
+            parsed = urlparse(url)
+            if parsed.netloc:
+                base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+                if base_url not in urls:
+                    urls.append(base_url)
+        except (ValueError, AttributeError):
+            pass
+
+    urls: list = []
+
+    if "mcpServers" in mcp_config:
+        mcp_config = mcp_config["mcpServers"]
+
+    for key, value in mcp_config.items():
+        if key in ("mcpServers", "servers"):
+            if isinstance(value, dict):
+                for v in value.values():
+                    _extract_from_value(v)
+            elif isinstance(value, list):
+                for item in value:
+                    _extract_from_value(item)
+        else:
+            _extract_from_value(value)
+
+    return urls
 
 
 def _build_skill_package(skill_name: str, skill_path: str) -> Path:
@@ -303,6 +372,8 @@ async def user_reset_key(request: Request, id: int):
 
         # Reset API key to new random value
         new_user = await user_crud.reset_api_key(conn, id)
+        if not new_user:
+            return redirect_with_message("/admin/users", "重置失败", "error")
 
     return redirect_with_message(
         f"/admin/users/{id}",
@@ -595,7 +666,9 @@ async def skill_upload(
                             entry_name = entry_name[len(common_prefix) + 1:]
                         target = skill_dir / entry_name
                         target.parent.mkdir(parents=True, exist_ok=True)
-                        target.write_bytes(tf.extractfile(member).read())
+                        extracted = tf.extractfile(member)
+                        if extracted is not None:
+                            target.write_bytes(extracted.read())
                 message = "压缩包已覆盖技能目录"
         else:
             # Single file - add/replace

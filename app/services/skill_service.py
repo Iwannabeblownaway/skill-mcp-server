@@ -1,7 +1,7 @@
 """Skill service - business logic for skill operations."""
 
 import json
-from typing import Optional, Union
+from typing import Any, Optional, Union
 from urllib.parse import urlparse
 
 from app.db.session import get_db
@@ -13,40 +13,90 @@ from app.db.crud import call_log as call_log_crud
 def extract_urls_from_mcp_config(mcp_config: dict) -> list[str]:
     """Extract base URLs from MCP config, removing all query parameters.
 
-    Handles two formats:
-    1. Remote HTTP servers: {"type": "http", "url": "https://..."}
-    2. Simple URL strings: {"server-name": "https://..."}
+    Handles flexible formats:
+    - Simple URL strings: {"server-name": "https://..."}
+    - Object with url field: {"server-name": {"url": "https://..."}}
+    - Nested mcpServers wrapper: {"mcpServers": {"server": {...}}}
+    - Arrays of servers: [{"url": "https://..."}]
+    - Various url field names: url, remote_url, endpoint, server_url, uri
 
     Args:
-        mcp_config: MCP configuration dict (e.g., {"filesystem": {...}, "git": {...}})
+        mcp_config: MCP configuration dict
 
     Returns:
         List of base URLs with all query params stripped.
-        E.g., "http://localhost:8080/filesystem?key=xxx" -> "http://localhost:8080/filesystem"
     """
-    urls = []
+    # Known URL field names in various MCP implementations
+    URL_FIELD_NAMES = ("url", "baseUrl", "remote_url", "endpoint", "server_url", "uri")
 
-    for key, value in mcp_config.items():
-        url = None
-
+    def _extract_from_value(value: Any) -> None:
+        """Extract URL from a single config value (recursive helper)."""
         if isinstance(value, str):
-            # Simple URL string: {"filesystem": "http://localhost:8080"}
-            url = value
+            # Simple URL string
+            _add_url(value)
         elif isinstance(value, dict):
-            # Object format: check for url field
-            url = value.get("url") or value.get("remote_url")
-            # Skip local servers (have command/args but no url)
-            if not url and "command" in value:
-                continue
-        else:
-            continue
+            # Check if this dict has a URL field directly
+            url = None
+            for field in URL_FIELD_NAMES:
+                if field in value:
+                    url = value[field]
+                    break
 
-        if url:
-            # Strip all query parameters - keep only scheme://host/path
+            if url and isinstance(url, str):
+                _add_url(url)
+            elif not url:
+                # Local server (has command/args but no url) - skip
+                if "command" not in value and "url" not in value:
+                    # Could be a nested config, try to find URL fields recursively
+                    for v in value.values():
+                        _extract_from_value(v)
+        elif isinstance(value, list):
+            # Array of server configs
+            for item in value:
+                _extract_from_value(item)
+
+    def _add_url(url: str) -> None:
+        """Parse and add URL if valid, skipping query parameters."""
+        if not url or not isinstance(url, str):
+            return
+        url = url.strip()
+        if not url:
+            return
+        # Strip trailing slashes for consistency
+        url = url.rstrip("/")
+        # Only process if looks like a URL
+        if not url.startswith(("http://", "https://", "//")):
+            return
+        # Handle //domain.com style (protocol-relative URL)
+        if url.startswith("//"):
+            url = "https:" + url
+        try:
             parsed = urlparse(url)
-            base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-            if base_url not in urls:
-                urls.append(base_url)
+            if parsed.netloc:
+                base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+                if base_url not in urls:
+                    urls.append(base_url)
+        except (ValueError, AttributeError):
+            pass
+
+    urls: list[str] = []
+
+    # Handle nested mcpServers wrapper
+    if "mcpServers" in mcp_config:
+        mcp_config = mcp_config["mcpServers"]
+
+    # Iterate over config items
+    for key, value in mcp_config.items():
+        if key in ("mcpServers", "servers"):
+            # Nested servers object
+            if isinstance(value, dict):
+                for v in value.values():
+                    _extract_from_value(v)
+            elif isinstance(value, list):
+                for item in value:
+                    _extract_from_value(item)
+        else:
+            _extract_from_value(value)
 
     return urls
 
