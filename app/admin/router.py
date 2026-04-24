@@ -1,12 +1,13 @@
 """Admin panel routes."""
 
 import os
+import secrets
 import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Request, Form, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Request, Form, HTTPException, Query, UploadFile, File, Depends, Cookie
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from starlette.datastructures import URL
@@ -16,8 +17,16 @@ from app.db.crud import user as user_crud
 from app.db.crud import skill as skill_crud
 from app.db.crud import user_skill as user_skill_crud
 from app.db.crud import call_log as call_log_crud
+from app.utils.redis_client import redis_client
+
+from app.config import settings
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+# Session configuration
+ADMIN_SESSION_TTL = settings.ADMIN_SESSION_TTL
+SESSION_COOKIE_NAME = "admin_session"
+SESSION_KEY_PREFIX = "admin:session:"
 
 
 def render_template(template_name: str, context: dict) -> HTMLResponse:
@@ -86,202 +95,136 @@ def set_message(request: Request, text: str, type: str = "success"):
     request.state.message = {"text": text, "type": type}
 
 
-# ==================== Helper Functions ====================
+# ==================== Session Management ====================
 
-def _flatten_single_top_level_dir(entries: list[str]) -> str:
-    """Detect if all entries are under a single top-level directory.
+async def create_admin_session(user: dict) -> str:
+    """Create an admin session and return session ID."""
+    session_id = secrets.token_urlsafe(32)
+    session_data = {
+        "id": user["id"],  # Use internal id (int) for DB queries
+        "username": user["username"],
+        "role": user["role"],
+    }
+    await redis_client.put_session(
+        f"{SESSION_KEY_PREFIX}{session_id}",
+        session_data,
+        ttl=ADMIN_SESSION_TTL,
+    )
+    return session_id
 
-    If all file entries share a common parent directory, return that prefix so it can be stripped.
-    This handles ZIP files created from inside a folder (which include the folder as top-level).
 
-    Args:
-        entries: List of file entry paths (e.g., ['mcp-builder/SKILL.md', 'mcp-builder/README.md'])
+async def get_admin_session(session_id: str) -> Optional[dict]:
+    """Get admin session data."""
+    if not session_id:
+        return None
+    return await redis_client.get_session(f"{SESSION_KEY_PREFIX}{session_id}")
 
-    Returns:
-        Common prefix to strip (e.g., 'mcp-builder'), or '' if no flattening needed
+
+async def delete_admin_session(session_id: str) -> None:
+    """Delete an admin session."""
+    if session_id:
+        await redis_client.delete_session(f"{SESSION_KEY_PREFIX}{session_id}")
+
+
+def get_session_id(request: Request) -> Optional[str]:
+    """Extract session ID from cookie."""
+    return request.cookies.get(SESSION_COOKIE_NAME)
+
+
+async def get_current_admin_user(request: Request) -> Optional[dict]:
+    """Get current logged-in admin user from session."""
+    session_id = get_session_id(request)
+    if not session_id:
+        return None
+    session_data = await get_admin_session(session_id)
+    if not session_data:
+        return None
+    # Fetch fresh user data from database
+    async with get_db() as conn:
+        user = await user_crud.get_by_id(conn, session_data["id"])
+    return user
+
+
+async def require_admin(request: Request) -> dict:
+    """Dependency that requires admin authentication.
+
+    Raises HTTPException if not authenticated.
     """
-    if not entries:
-        return ""
-
-    # Split all paths into components
-    parts_list = [p.split("/") for p in entries]
-
-    # Find common prefix (directory part only, not individual filenames)
-    common = []
-    for components in zip(*parts_list):
-        if len(set(components)) == 1:
-            common.append(components[0])
-        else:
-            break
-
-    # If we have a common directory prefix, return it
-    if len(common) > 0:
-        return "/".join(common)
-    return ""
+    user = await get_current_admin_user(request)
+    if not user:
+        raise HTTPException(status_code=303, headers={"Location": "/admin/login"})
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=303, headers={"Location": "/admin/login"})
+    return user
 
 
-def _parse_dependencies(dependencies_input: str) -> list:
-    """Parse dependencies from various input formats.
+# ==================== Login/Logout Routes ====================
 
-    Supports:
-    - Comma-separated: "dep1,dep2,dep3"
-    - JSON array: '["dep1", "dep2"]'
-    - MCP config JSON: '{"mcpServers": {"name": {"url": "https://..."}}}'
-      Extracts base URLs (without query params) from the config.
+@router.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    """Login page - redirect if already logged in."""
+    session_id = get_session_id(request)
+    if session_id:
+        session_data = await get_admin_session(session_id)
+        if session_data:
+            return RedirectResponse(url="/admin", status_code=303)
 
-    Args:
-        dependencies_input: Raw input string
-
-    Returns:
-        List of dependency URLs (extracted from MCP config) or names
-    """
-    import json
-
-    if not dependencies_input or not dependencies_input.strip():
-        return []
-
-    dependencies_input = dependencies_input.strip()
-
-    # Try JSON array format first
-    if dependencies_input.startswith("["):
-        try:
-            deps = json.loads(dependencies_input)
-            if isinstance(deps, list):
-                return [str(d) for d in deps if d]
-        except json.JSONDecodeError:
-            pass
-
-    # Try full MCP config JSON - extract URLs properly
-    if dependencies_input.startswith("{"):
-        try:
-            config = json.loads(dependencies_input)
-            # Use the same extraction logic as skill_service
-            urls = _extract_urls_from_mcp_config(config)
-            if urls:
-                return urls
-        except json.JSONDecodeError:
-            pass
-
-    # Fall back to comma-separated
-    return [d.strip() for d in dependencies_input.split(",") if d.strip()]
+    return render_template("login.html", {
+        "request": request,
+        "error": None,
+    })
 
 
-def _extract_urls_from_mcp_config(mcp_config: dict) -> list:
-    """Extract base URLs from MCP config, removing query parameters.
+@router.post("/login", response_class=HTMLResponse)
+async def login(request: Request, api_key: str = Form(...)):
+    """Process login request using API key."""
+    async with get_db() as conn:
+        # Find user by API key and verify they are admin
+        user = await user_crud.get_by_api_key(conn, api_key.strip())
 
-    Handles flexible formats:
-    - Simple URL strings: {"server-name": "https://..."}
-    - Object with url field: {"server-name": {"url": "https://..."}}
-    - Nested mcpServers wrapper: {"mcpServers": {"server": {...}}}
-    - Various url field names: url, baseUrl, remote_url, endpoint, server_url, uri
-    """
-    from urllib.parse import urlparse
+    if not user:
+        return render_template("login.html", {
+            "request": request,
+            "error": "无效的 API Key",
+        })
 
-    URL_FIELD_NAMES = ("url", "baseUrl", "remote_url", "endpoint", "server_url", "uri")
+    if user.get("role") != "admin":
+        return render_template("login.html", {
+            "request": request,
+            "error": "只有管理员账户可以登录后台",
+        })
 
-    def _extract_from_value(value):
-        if isinstance(value, str):
-            _add_url(value)
-        elif isinstance(value, dict):
-            url = None
-            for field in URL_FIELD_NAMES:
-                if field in value:
-                    url = value[field]
-                    break
-            if url and isinstance(url, str):
-                _add_url(url)
-            elif not url:
-                for v in value.values():
-                    _extract_from_value(v)
-        elif isinstance(value, list):
-            for item in value:
-                _extract_from_value(item)
+    # Create session
+    session_id = await create_admin_session(user)
 
-    def _add_url(url: str) -> None:
-        if not url or not isinstance(url, str):
-            return
-        url = url.strip().rstrip("/")
-        if not url.startswith(("http://", "https://", "//")):
-            return
-        if url.startswith("//"):
-            url = "https:" + url
-        try:
-            parsed = urlparse(url)
-            if parsed.netloc:
-                base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-                if base_url not in urls:
-                    urls.append(base_url)
-        except (ValueError, AttributeError):
-            pass
-
-    urls: list = []
-
-    if "mcpServers" in mcp_config:
-        mcp_config = mcp_config["mcpServers"]
-
-    for key, value in mcp_config.items():
-        if key in ("mcpServers", "servers"):
-            if isinstance(value, dict):
-                for v in value.values():
-                    _extract_from_value(v)
-            elif isinstance(value, list):
-                for item in value:
-                    _extract_from_value(item)
-        else:
-            _extract_from_value(value)
-
-    return urls
+    # Create response with redirect to admin dashboard
+    response = RedirectResponse(url="/admin", status_code=303)
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=session_id,
+        max_age=ADMIN_SESSION_TTL,
+        httponly=True,
+        samesite="lax",
+    )
+    return response
 
 
-def _build_skill_package(skill_name: str, skill_path: str) -> Path:
-    """Build a .skill package (zip file) from skill folder.
+@router.get("/logout", response_class=HTMLResponse)
+async def logout(request: Request):
+    """Logout - delete session and redirect to login."""
+    session_id = get_session_id(request)
+    if session_id:
+        await delete_admin_session(session_id)
 
-    Args:
-        skill_name: Skill name
-        skill_path: Relative path to skill folder
-
-    Returns:
-        Path to the generated .skill package (actually a zip file)
-    """
-    skill_dir = skill_crud.SKILLS_DIR / skill_path
-    if not skill_dir.exists():
-        raise FileNotFoundError(f"Skill folder not found: {skill_dir}")
-
-    # Create packages directory alongside skills
-    packages_dir = skill_crud.SKILLS_DIR.parent / "skill_packages"
-    packages_dir.mkdir(exist_ok=True)
-
-    # Build .skill file path (still a zip internally)
-    package_path = packages_dir / f"{skill_name}.skill"
-
-    # Create zip
-    with zipfile.ZipFile(package_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for file_path in skill_dir.rglob("*"):
-            if file_path.is_file():
-                arcname = file_path. relative_to(skill_dir)
-                zf.write(file_path, arcname)
-
-    return package_path
-
-
-def _get_skill_package_path(skill_name: str) -> Optional[Path]:
-    """Get path to .skill package if it exists.
-
-    Args:
-        skill_name: Skill name
-
-    Returns:
-        Path to .skill package or None if not found
-    """
-    packages_dir = skill_crud.SKILLS_DIR.parent / "skill_packages"
-    package_path = packages_dir / f"{skill_name}.skill"
-    return package_path if package_path.exists() else None
+    response = RedirectResponse(url="/admin/login", status_code=303)
+    response.delete_cookie(SESSION_COOKIE_NAME)
+    return response
 
 
 # ==================== Dashboard ====================
 
 @router.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request):
+async def dashboard(request: Request, admin_user: dict = Depends(require_admin)):
     """Dashboard overview."""
     async with get_db() as conn:
         # User stats
@@ -304,13 +247,14 @@ async def dashboard(request: Request):
         "user_count": user_count,
         "skill_count": skill_count,
         "auth_count": auth_count,
+        "admin_user": admin_user,
     })
 
 
 # ==================== Users ====================
 
 @router.get("/users", response_class=HTMLResponse)
-async def user_list(request: Request):
+async def user_list(request: Request, admin_user: dict = Depends(require_admin)):
     """List all users."""
     async with get_db() as conn:
         users = await user_crud.list_users(conn, limit=1000)
@@ -319,21 +263,24 @@ async def user_list(request: Request):
         "request": request,
         "message": get_message(request),
         "users": users,
+        "admin_user": admin_user,
     })
 
 
 @router.get("/users/create", response_class=HTMLResponse)
-async def user_create_form(request: Request):
+async def user_create_form(request: Request, admin_user: dict = Depends(require_admin)):
     """User creation form."""
     return render_template("users/create.html", {
         "request": request,
         "message": get_message(request),
+        "admin_user": admin_user,
     })
 
 
 @router.post("/users/create", response_class=HTMLResponse)
 async def user_create(
     request: Request,
+    admin_user: dict = Depends(require_admin),
     user_id: str = Form(""),
     username: str = Form(...),
     role: str = Form("user"),
@@ -363,7 +310,7 @@ async def user_create(
 
 
 @router.post("/users/{id}/reset-key", response_class=HTMLResponse)
-async def user_reset_key(request: Request, id: int):
+async def user_reset_key(request: Request, id: int, admin_user: dict = Depends(require_admin)):
     """Reset user's API key."""
     async with get_db() as conn:
         user = await user_crud.get_by_id(conn, id)
@@ -386,6 +333,7 @@ async def user_reset_key(request: Request, id: int):
 async def user_update(
     request: Request,
     id: int,
+    admin_user: dict = Depends(require_admin),
     username: str = Form(""),
     user_id_value: str = Form(""),
     role: str = Form(""),
@@ -427,7 +375,7 @@ async def user_update(
 
 
 @router.get("/users/{id}", response_class=HTMLResponse)
-async def user_detail(request: Request, id: int):
+async def user_detail(request: Request, id: int, admin_user: dict = Depends(require_admin)):
     """User detail with skills."""
     async with get_db() as conn:
         user = await user_crud.get_by_id(conn, id)
@@ -455,6 +403,7 @@ async def user_detail(request: Request, id: int):
         "user": user,
         "user_skills": user_skills,
         "available_skills": available_skills,
+        "admin_user": admin_user,
     })
 
 
@@ -462,6 +411,7 @@ async def user_detail(request: Request, id: int):
 async def user_grant_skill(
     request: Request,
     id: int,
+    admin_user: dict = Depends(require_admin),
     skill_id: int = Form(...),
 ):
     """Grant a skill to user (only active skills)."""
@@ -482,7 +432,7 @@ async def user_grant_skill(
 
 
 @router.post("/users/{id}/revoke/{skill_id}", response_class=HTMLResponse)
-async def user_revoke_skill(request: Request, id: int, skill_id: int):
+async def user_revoke_skill(request: Request, id: int, skill_id: int, admin_user: dict = Depends(require_admin)):
     """Revoke a skill from user."""
     async with get_db() as conn:
         await user_skill_crud.revoke(conn, id, skill_id)
@@ -491,7 +441,7 @@ async def user_revoke_skill(request: Request, id: int, skill_id: int):
 
 
 @router.post("/users/{id}/delete", response_class=HTMLResponse)
-async def user_delete(request: Request, id: int):
+async def user_delete(request: Request, id: int, admin_user: dict = Depends(require_admin)):
     """Delete a user."""
     async with get_db() as conn:
         user = await user_crud.get_by_id(conn, id)
@@ -509,7 +459,7 @@ async def user_delete(request: Request, id: int):
 # ==================== Skills ====================
 
 @router.get("/skills", response_class=HTMLResponse)
-async def skill_list(request: Request):
+async def skill_list(request: Request, admin_user: dict = Depends(require_admin)):
     """List all skills."""
     async with get_db() as conn:
         skills = await skill_crud.list_all(conn, limit=1000)
@@ -518,21 +468,24 @@ async def skill_list(request: Request):
         "request": request,
         "message": get_message(request),
         "skills": skills,
+        "admin_user": admin_user,
     })
 
 
 @router.get("/skills/create", response_class=HTMLResponse)
-async def skill_create_form(request: Request):
+async def skill_create_form(request: Request, admin_user: dict = Depends(require_admin)):
     """Skill creation form."""
     return render_template("skills/create.html", {
         "request": request,
         "message": get_message(request),
+        "admin_user": admin_user,
     })
 
 
 @router.post("/skills/create", response_class=HTMLResponse)
 async def skill_create(
     request: Request,
+    admin_user: dict = Depends(require_admin),
     name: str = Form(...),
     description: str = Form(""),
     dependencies: str = Form(""),
@@ -566,7 +519,7 @@ async def skill_create(
 
 
 @router.get("/skills/{skill_id}", response_class=HTMLResponse)
-async def skill_detail(request: Request, skill_id: int):
+async def skill_detail(request: Request, skill_id: int, admin_user: dict = Depends(require_admin)):
     """Skill detail with files."""
     async with get_db() as conn:
         skill = await skill_crud.get_by_id(conn, skill_id)
@@ -591,6 +544,7 @@ async def skill_detail(request: Request, skill_id: int):
         "skill": skill,
         "files": files,
         "users_with_skill": users_with_skill,
+        "admin_user": admin_user,
     })
 
 
@@ -598,6 +552,7 @@ async def skill_detail(request: Request, skill_id: int):
 async def skill_upload(
     request: Request,
     skill_id: int,
+    admin_user: dict = Depends(require_admin),
     file: UploadFile = File(...),
 ):
     """Upload a file to skill."""
@@ -694,6 +649,7 @@ async def skill_upload(
 async def skill_update(
     request: Request,
     skill_id: int,
+    admin_user: dict = Depends(require_admin),
     description: str = Form(""),
     dependencies: str = Form(""),
 ):
@@ -716,7 +672,7 @@ async def skill_update(
 
 
 @router.post("/skills/{skill_id}/delete", response_class=HTMLResponse)
-async def skill_delete(request: Request, skill_id: int):
+async def skill_delete(request: Request, skill_id: int, admin_user: dict = Depends(require_admin)):
     """Delete a skill."""
     async with get_db() as conn:
         skill = await skill_crud.get_by_id(conn, skill_id)
@@ -734,7 +690,7 @@ async def skill_delete(request: Request, skill_id: int):
 
 
 @router.get("/skills/{skill_id}/download", response_class=Response)
-async def skill_download(request: Request, skill_id: int):
+async def skill_download(request: Request, skill_id: int, admin_user: dict = Depends(require_admin)):
     """Download skill as .skill package (ZIP format)."""
     async with get_db() as conn:
         skill = await skill_crud.get_by_id(conn, skill_id)
@@ -760,7 +716,7 @@ async def skill_download(request: Request, skill_id: int):
 
 
 @router.post("/skills/{skill_id}/rebuild-package", response_class=HTMLResponse)
-async def skill_rebuild_package(request: Request, skill_id: int):
+async def skill_rebuild_package(request: Request, skill_id: int, admin_user: dict = Depends(require_admin)):
     """Rebuild .skill package for a skill."""
     async with get_db() as conn:
         skill = await skill_crud.get_by_id(conn, skill_id)
@@ -784,7 +740,7 @@ async def skill_rebuild_package(request: Request, skill_id: int):
 # ==================== Authorizations ====================
 
 @router.get("/authorizations", response_class=HTMLResponse)
-async def auth_list(request: Request):
+async def auth_list(request: Request, admin_user: dict = Depends(require_admin)):
     """List all authorizations."""
     async with get_db() as conn:
         users = await user_crud.list_users(conn, limit=1000)
@@ -808,12 +764,14 @@ async def auth_list(request: Request):
         "auths": auths,
         "users": users,
         "skills": skills,
+        "admin_user": admin_user,
     })
 
 
 @router.post("/authorizations/grant", response_class=HTMLResponse)
 async def auth_grant(
     request: Request,
+    admin_user: dict = Depends(require_admin),
     user_id: int = Form(...),
     skill_id: int = Form(...),
 ):
@@ -833,6 +791,7 @@ async def auth_grant(
 @router.post("/authorizations/revoke", response_class=HTMLResponse)
 async def auth_revoke(
     request: Request,
+    admin_user: dict = Depends(require_admin),
     user_id: int = Form(...),
     skill_id: int = Form(...),
 ):
@@ -848,6 +807,7 @@ async def auth_revoke(
 @router.get("/logs", response_class=HTMLResponse)
 async def log_list(
     request: Request,
+    admin_user: dict = Depends(require_admin),
     user_id: Optional[int] = None,
     skill_name: Optional[str] = None,
     status: Optional[str] = None,
@@ -914,4 +874,5 @@ async def log_list(
             "denied": denied_count,
             "avg_duration_ms": avg_duration,
         },
+        "admin_user": admin_user,
     })

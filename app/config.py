@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     DEBUG: bool = Field(default=False, description="Debug mode")
     LOG_LEVEL: str = Field(default="INFO", description="Logging level")
 
+    # Admin Session Configuration
+    ADMIN_SESSION_TTL: int = Field(
+        default=86400, description="Admin session TTL in seconds (default: 24 hours)"
+    )
+
     @property
     def database_url(self) -> str:
         """Generate database URL from settings."""
