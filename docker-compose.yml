@@ -8,7 +8,7 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-rootpassword}
-      MYSQL_DATABASE: ${DB_NAME:-mcp_server}
+      MYSQL_DATABASE: ${DB_NAME:-skill_mcp}
       MYSQL_USER: ${DB_USER:-mcp_user}
       MYSQL_PASSWORD: ${DB_PASSWORD:-mcp_password}
     volumes:
@@ -61,7 +61,7 @@ services:
       DB_PORT: 3306
       DB_USER: ${DB_USER:-mcp_user}
       DB_PASSWORD: ${DB_PASSWORD:-mcp_password}
-      DB_NAME: ${DB_NAME:-mcp_server}
+      DB_NAME: ${DB_NAME:-skill_mcp}
       # Redis
       REDIS_HOST: redis
       REDIS_PORT: 6379

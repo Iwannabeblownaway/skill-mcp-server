@@ -45,14 +45,14 @@ sudo systemctl enable mysqld
 # 创建数据库
 echo "=== 创建数据库 ==="
 mysql -u root << 'EOSQL'
-CREATE DATABASE IF NOT EXISTS mcp_server CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE IF NOT EXISTS skill_mcp CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER IF NOT EXISTS 'mcp_user'@'localhost' IDENTIFIED BY '你的密码';
-GRANT ALL PRIVILEGES ON mcp_server.* TO 'mcp_user'@'localhost';
+GRANT ALL PRIVILEGES ON skill_mcp.* TO 'mcp_user'@'localhost';
 FLUSH PRIVILEGES;
 EOSQL
 
 # 初始化表
-mysql -u root mcp_server < scripts/init_db.sql
+mysql -u root skill_mcp < scripts/init_db.sql
 
 # 安装 Redis
 echo "=== 安装 Redis ==="
@@ -68,7 +68,7 @@ DB_HOST=localhost
 DB_PORT=3306
 DB_USER=mcp_user
 DB_PASSWORD=你的密码
-DB_NAME=mcp_server
+DB_NAME=skill_mcp
 
 REDIS_HOST=localhost
 REDIS_PORT=6379
