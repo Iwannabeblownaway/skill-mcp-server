@@ -1,5 +1,6 @@
 """Admin panel routes."""
 
+import json
 import os
 import secrets
 import zipfile
@@ -93,6 +94,72 @@ def get_message(request: Request) -> Optional[dict]:
 def set_message(request: Request, text: str, type: str = "success"):
     """Set flash message (deprecated - use redirect_with_message instead)."""
     request.state.message = {"text": text, "type": type}
+
+
+# ==================== Helper Functions ====================
+
+def _flatten_single_top_level_dir(entries: list[str]) -> str:
+    """Detect if all entries are under a single top-level directory.
+
+    If all file entries share a common parent directory, return that prefix so it can be stripped.
+    Otherwise return empty string.
+
+    Args:
+        entries: List of file entry paths (e.g., ["mcp-builder/SKILL.md", "mcp-builder/README.md"])
+
+    Returns:
+        The common directory prefix if all entries share one, empty string otherwise.
+    """
+    if not entries:
+        return ""
+
+    # Split each entry into parts and find common prefix
+    parts_list = [e.split("/") for e in entries]
+    if not all(parts_list):
+        return ""
+
+    common = []
+    for parts in zip(*parts_list):
+        if len(set(parts)) == 1:
+            common.append(parts[0])
+        else:
+            break
+
+    if len(common) > 0:
+        return "/".join(common)
+    return ""
+
+
+def _parse_dependencies(dependencies_input: str) -> list:
+    """Parse dependencies from various input formats.
+
+    Supports:
+    - Comma-separated: "dep1,dep2,dep3"
+    - JSON array: '["dep1", "dep2"]'
+    - MCP config JSON: '{"mcpServers": {"sorftime": {}, "aws": {}}}'
+
+    Args:
+        dependencies_input: Raw dependencies string from form input.
+
+    Returns:
+        List of dependency names (server keys from mcpServers).
+    """
+    if not dependencies_input or not dependencies_input.strip():
+        return []
+
+    # Try JSON array format first
+    try:
+        parsed = json.loads(dependencies_input)
+        if isinstance(parsed, list):
+            return [d.strip() for d in parsed if d.strip()]
+        elif isinstance(parsed, dict) and "mcpServers" in parsed:
+            # Full MCP config format - extract server names
+            return list(parsed.get("mcpServers", {}).keys())
+    except json.JSONDecodeError:
+        pass
+
+    # Fall back to comma-separated
+    return [d.strip() for d in dependencies_input.split(",") if d.strip()]
 
 
 # ==================== Session Management ====================
