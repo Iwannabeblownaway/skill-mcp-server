@@ -669,8 +669,14 @@ async def skill_upload(
                         if common_prefix:
                             entry_name = entry_name[len(common_prefix) + 1:]
                         target = skill_dir / entry_name
+                        # Skip if entry resolves to a directory path
+                        if target.is_dir() or entry_name.endswith("/"):
+                            continue
                         target.parent.mkdir(parents=True, exist_ok=True)
-                        target.write_bytes(zf.read(info.filename))
+                        try:
+                            target.write_bytes(zf.read(info.filename))
+                        except IsADirectoryError:
+                            continue
                 message = "ZIP 已覆盖技能目录"
             else:
                 # .tar, .tar.gz, .tgz, .tar.bz2, .tar.xz
@@ -687,10 +693,16 @@ async def skill_upload(
                         if common_prefix:
                             entry_name = entry_name[len(common_prefix) + 1:]
                         target = skill_dir / entry_name
+                        # Skip if entry resolves to a directory path
+                        if target.is_dir():
+                            continue
                         target.parent.mkdir(parents=True, exist_ok=True)
                         extracted = tf.extractfile(member)
                         if extracted is not None:
-                            target.write_bytes(extracted.read())
+                            try:
+                                target.write_bytes(extracted.read())
+                            except IsADirectoryError:
+                                continue
                 message = "压缩包已覆盖技能目录"
         else:
             # Single file - add/replace
