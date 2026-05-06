@@ -1037,23 +1037,21 @@ async def auth_revoke(
 async def log_list(
     request: Request,
     admin_user: dict = Depends(require_admin),
-    user_id: Optional[str] = None,
-    skill_name: Optional[str] = None,
-    status: Optional[str] = None,
-    start_time: Optional[datetime] = None,
-    end_time: Optional[datetime] = None,
-    page: int = 1,
+    user_id: int = Query(default=None),
+    skill_name: str = Query(default=None),
+    status: str = Query(default=None),
+    start_time: datetime = Query(default=None),
+    end_time: datetime = Query(default=None),
+    page: int = Query(default=1, ge=1),
 ):
     """List call logs with filters."""
-    # Convert user_id from string to int if provided
-    user_id_int: Optional[int] = int(user_id) if user_id and user_id.isdigit() else None
     page_size = 50
     offset = (page - 1) * page_size
 
     async with get_db() as conn:
         logs, total = await call_log_crud.list_logs(
             conn,
-            user_id=user_id_int,
+            user_id=user_id,
             skill_name=skill_name,
             start_time=start_time,
             end_time=end_time,
@@ -1068,7 +1066,7 @@ async def log_list(
     async with get_db() as conn:
         all_logs, _ = await call_log_crud.list_logs(
             conn,
-            user_id=user_id_int,
+            user_id=user_id,
             skill_name=skill_name,
             start_time=start_time,
             end_time=end_time,
