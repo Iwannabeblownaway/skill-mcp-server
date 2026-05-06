@@ -44,10 +44,12 @@ def get_templates():
     This avoids issues with uvicorn hot-reload preserving stale cache state.
     """
     from jinja2 import Environment, FileSystemLoader
+    from pathlib import Path
 
-    # Create environment with cache disabled
+    # Use absolute path based on this file's location to avoid working directory issues
+    template_dir = Path(__file__).parent / "templates"
     env = Environment(
-        loader=FileSystemLoader("app/admin/templates"),
+        loader=FileSystemLoader(template_dir),
         auto_reload=True,
         cache_size=0  # Disable cache
     )
