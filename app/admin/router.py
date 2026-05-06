@@ -102,7 +102,7 @@ def _flatten_single_top_level_dir(entries: list[str]) -> str:
     """Detect if all entries are under a single top-level directory.
 
     If all file entries share a common parent directory, return that prefix so it can be stripped.
-    Otherwise return empty string.
+    Handles both forward slashes (Unix) and backslashes (Windows) in archive entries.
 
     Args:
         entries: List of file entry paths (e.g., ["mcp-builder/SKILL.md", "mcp-builder/README.md"])
@@ -113,8 +113,11 @@ def _flatten_single_top_level_dir(entries: list[str]) -> str:
     if not entries:
         return ""
 
+    # Normalize all separators to forward slashes for cross-platform compatibility
+    normalized = [e.replace("\\", "/") for e in entries]
+
     # Split each entry into parts and find common prefix
-    parts_list = [e.split("/") for e in entries]
+    parts_list = [e.split("/") for e in normalized]
     if not all(parts_list):
         return ""
 
@@ -172,6 +175,8 @@ def _build_skill_package(skill_name: str, skill_path: str) -> Path:
     Returns:
         Path to the generated .skill package (actually a zip file)
     """
+    from pathlib import PurePosixPath
+
     skill_dir = skill_crud.SKILLS_DIR / skill_path
     if not skill_dir.exists():
         raise FileNotFoundError(f"Skill folder not found: {skill_dir}")
@@ -183,12 +188,13 @@ def _build_skill_package(skill_name: str, skill_path: str) -> Path:
     # Build .skill file path (still a zip internally)
     package_path = packages_dir / f"{skill_name}.skill"
 
-    # Create zip
+    # Create zip - use forward slashes for cross-platform compatibility
     with zipfile.ZipFile(package_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for file_path in skill_dir.rglob("*"):
             if file_path.is_file():
-                arcname = file_path.relative_to(skill_dir)
-                zf.write(file_path, arcname)
+                # Use PurePosixPath to ensure forward slashes in zip
+                arcname = PurePosixPath(file_path.relative_to(skill_dir))
+                zf.write(file_path, str(arcname))
 
     return package_path
 
@@ -703,26 +709,36 @@ async def skill_upload(
             if zipfile.is_zipfile(file_io):
                 # .zip or .skill - first collect all entries to detect common prefix
                 with zipfile.ZipFile(file_io, "r") as zf:
-                    entries = [info.filename for info in zf.infolist() if not info.is_dir()]
+                    entries = [info.filename.replace("\\", "/") for info in zf.infolist() if not info.is_dir()]
                     common_prefix = _flatten_single_top_level_dir(entries)
 
+                    extracted_count = 0
                     for info in zf.infolist():
                         if info.is_dir():
                             continue
-                        entry_name = info.filename
+                        # Normalize path separators for cross-platform compatibility
+                        entry_name = info.filename.replace("\\", "/")
                         # Strip common prefix if all files are under one directory
                         if common_prefix:
                             entry_name = entry_name[len(common_prefix) + 1:]
+                        # Skip empty or directory-like entries
+                        if not entry_name or entry_name.endswith("/") or entry_name.endswith("\\"):
+                            continue
                         target = skill_dir / entry_name
                         # Skip if entry resolves to a directory path
-                        if target.is_dir() or entry_name.endswith("/"):
+                        if target.is_dir():
                             continue
                         target.parent.mkdir(parents=True, exist_ok=True)
                         try:
                             target.write_bytes(zf.read(info.filename))
+                            extracted_count += 1
                         except IsADirectoryError:
                             continue
-                message = "ZIP 已覆盖技能目录"
+
+                    if extracted_count == 0:
+                        message = "警告: 压缩包内没有文件或提取失败"
+                    else:
+                        message = f"ZIP 已覆盖技能目录 ({extracted_count} 个文件)"
             else:
                 # .tar, .tar.gz, .tgz, .tar.bz2, .tar.xz
                 import tarfile
@@ -730,13 +746,18 @@ async def skill_upload(
                     entries = [m.name for m in tf.getmembers() if not m.isdir()]
                     common_prefix = _flatten_single_top_level_dir(entries)
 
+                    extracted_count = 0
                     for member in tf.getmembers():
                         if member.isdir():
                             continue
-                        entry_name = member.name
+                        # Normalize path separators for cross-platform compatibility
+                        entry_name = member.name.replace("\\", "/")
                         # Strip common prefix if all files are under one directory
                         if common_prefix:
                             entry_name = entry_name[len(common_prefix) + 1:]
+                        # Skip empty or directory-like entries
+                        if not entry_name or entry_name.endswith("/") or entry_name.endswith("\\"):
+                            continue
                         target = skill_dir / entry_name
                         # Skip if entry resolves to a directory path
                         if target.is_dir():
@@ -746,9 +767,14 @@ async def skill_upload(
                         if extracted is not None:
                             try:
                                 target.write_bytes(extracted.read())
+                                extracted_count += 1
                             except IsADirectoryError:
                                 continue
-                message = "压缩包已覆盖技能目录"
+
+                    if extracted_count == 0:
+                        message = "警告: 压缩包内没有文件或提取失败"
+                    else:
+                        message = f"压缩包已覆盖技能目录 ({extracted_count} 个文件)"
         else:
             # Single file - add/replace
             skill_dir.mkdir(parents=True, exist_ok=True)

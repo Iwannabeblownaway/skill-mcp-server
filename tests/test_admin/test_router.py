@@ -46,6 +46,28 @@ class TestFlattenSingleTopLevelDir:
 
         assert _flatten_single_top_level_dir([]) == ""
 
+    def test_windows_backslash_paths(self):
+        """Windows-style paths with backslashes should be normalized."""
+        from app.admin.router import _flatten_single_top_level_dir
+
+        # Windows-style paths with backslashes
+        entries = [r"mcp-builder\SKILL.md", r"mcp-builder\README.md"]
+        assert _flatten_single_top_level_dir(entries) == "mcp-builder"
+
+    def test_mixed_slash_paths(self):
+        """Mixed forward and backslash paths should still detect common prefix."""
+        from app.admin.router import _flatten_single_top_level_dir
+
+        entries = [r"mcp-builder/SKILL.md", r"mcp-builder\README.md"]
+        assert _flatten_single_top_level_dir(entries) == "mcp-builder"
+
+    def test_deeply_nested_backslash(self):
+        """Deeply nested Windows paths should return correct prefix."""
+        from app.admin.router import _flatten_single_top_level_dir
+
+        entries = [r"a\b\c\file1.txt", r"a\b\c\file2.txt"]
+        assert _flatten_single_top_level_dir(entries) == "a/b/c"
+
 
 class TestRedirectWithMessage:
     """Tests for redirect_with_message function."""
