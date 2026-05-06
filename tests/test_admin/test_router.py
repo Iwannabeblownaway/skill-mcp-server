@@ -68,6 +68,46 @@ class TestFlattenSingleTopLevelDir:
         entries = [r"a\b\c\file1.txt", r"a\b\c\file2.txt"]
         assert _flatten_single_top_level_dir(entries) == "a/b/c"
 
+    def test_winrar_nested_duplicate_single_level(self):
+        """Single-level prefix like skill/SKILL.md should return 'skill' prefix."""
+        from app.admin.router import _flatten_single_top_level_dir
+
+        # Normal case - single directory wrapping
+        entries = ["skill/SKILL.md", "skill/README.md"]
+        assert _flatten_single_top_level_dir(entries) == "skill"
+
+    def test_winrar_nested_duplicate_double_level(self):
+        """WinRAR nested duplicate dirs like skill/skill/SKILL.md should strip both levels."""
+        from app.admin.router import _flatten_single_top_level_dir
+
+        # WinRAR case - nested duplicate directory names
+        entries = ["skill/skill/SKILL.md", "skill/skill/README.md"]
+        # Should strip "skill/skill" not just "skill"
+        assert _flatten_single_top_level_dir(entries) == "skill/skill"
+
+    def test_winrar_nested_duplicate_triple_level(self):
+        """WinRAR nested duplicate dirs with 3 levels."""
+        from app.admin.router import _flatten_single_top_level_dir
+
+        entries = ["a/a/a/SKILL.md", "a/a/a/README.md"]
+        assert _flatten_single_top_level_dir(entries) == "a/a/a"
+
+    def test_winrar_nested_not_consecutive(self):
+        """Non-consecutive duplicates should NOT be stripped."""
+        from app.admin.router import _flatten_single_top_level_dir
+
+        # "a/b" prefix - b is not same as a, so no consecutive duplicate
+        entries = ["a/b/SKILL.md", "a/b/README.md"]
+        assert _flatten_single_top_level_dir(entries) == "a/b"
+
+    def test_empty_result_after_stripping(self):
+        """If stripping would leave empty paths, handle gracefully."""
+        from app.admin.router import _flatten_single_top_level_dir
+
+        # Single file at root of zip
+        entries = ["SKILL.md", "README.md"]
+        assert _flatten_single_top_level_dir(entries) == ""
+
 
 class TestRedirectWithMessage:
     """Tests for redirect_with_message function."""

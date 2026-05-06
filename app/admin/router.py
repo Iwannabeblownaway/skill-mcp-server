@@ -104,6 +104,10 @@ def _flatten_single_top_level_dir(entries: list[str]) -> str:
     If all file entries share a common parent directory, return that prefix so it can be stripped.
     Handles both forward slashes (Unix) and backslashes (Windows) in archive entries.
 
+    Also handles nested duplicate directories created by some zip tools (e.g., WinRAR
+    creating "skill-auditor/skill-auditor/" structure). If the common prefix consists of
+    consecutive duplicate directory names, strips all of them.
+
     Args:
         entries: List of file entry paths (e.g., ["mcp-builder/SKILL.md", "mcp-builder/README.md"])
 
@@ -115,12 +119,12 @@ def _flatten_single_top_level_dir(entries: list[str]) -> str:
 
     # Normalize all separators to forward slashes for cross-platform compatibility
     normalized = [e.replace("\\", "/") for e in entries]
-
-    # Split each entry into parts and find common prefix
-    parts_list = [e.split("/") for e in normalized]
+    # Remove empty parts from split (handles "//" in paths)
+    parts_list = [list(filter(None, e.split("/"))) for e in normalized]
     if not all(parts_list):
         return ""
 
+    # Find common prefix
     common = []
     for parts in zip(*parts_list):
         if len(set(parts)) == 1:
@@ -128,9 +132,37 @@ def _flatten_single_top_level_dir(entries: list[str]) -> str:
         else:
             break
 
-    if len(common) > 0:
-        return "/".join(common)
-    return ""
+    if not common:
+        return ""
+
+    # Check if common prefix consists of consecutive duplicate directory names
+    # e.g., ["a", "a"] for "a/a/" - WinRAR nested duplicate case
+    if len(common) >= 2 and len(set(common)) == 1:
+        first_comp = common[0]
+        # Count consecutive occurrences of first_comp at start of first path
+        count = 0
+        for p in parts_list[0]:
+            if p == first_comp:
+                count += 1
+            else:
+                break
+
+        # If count >= 2, it means we have consecutive duplicate dirs like "a/a/"
+        # Strip ALL count occurrences from each path
+        if count >= 2:
+            new_parts_list = []
+            for parts in parts_list:
+                new_parts = parts[:]
+                for _ in range(count):
+                    if new_parts and new_parts[0] == first_comp:
+                        new_parts.pop(0)
+                new_parts_list.append(new_parts)
+
+            # The stripped prefix is count copies of first_comp
+            stripped_prefix = "/".join([first_comp] * count)
+            return stripped_prefix
+
+    return "/".join(common)
 
 
 def _parse_dependencies(dependencies_input: str) -> list:
