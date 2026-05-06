@@ -106,7 +106,7 @@ def _flatten_single_top_level_dir(entries: list[str]) -> str:
 
     Also handles nested duplicate directories created by some zip tools (e.g., WinRAR
     creating "skill-auditor/skill-auditor/" structure). If the common prefix consists of
-    consecutive duplicate directory names, strips all of them.
+    consecutive duplicate directory names, strips to just one level.
 
     Args:
         entries: List of file entry paths (e.g., ["mcp-builder/SKILL.md", "mcp-builder/README.md"])
@@ -138,29 +138,10 @@ def _flatten_single_top_level_dir(entries: list[str]) -> str:
     # Check if common prefix consists of consecutive duplicate directory names
     # e.g., ["a", "a"] for "a/a/" - WinRAR nested duplicate case
     if len(common) >= 2 and len(set(common)) == 1:
-        first_comp = common[0]
-        # Count consecutive occurrences of first_comp at start of first path
-        count = 0
-        for p in parts_list[0]:
-            if p == first_comp:
-                count += 1
-            else:
-                break
-
-        # If count >= 2, it means we have consecutive duplicate dirs like "a/a/"
-        # Strip ALL count occurrences from each path
-        if count >= 2:
-            new_parts_list = []
-            for parts in parts_list:
-                new_parts = parts[:]
-                for _ in range(count):
-                    if new_parts and new_parts[0] == first_comp:
-                        new_parts.pop(0)
-                new_parts_list.append(new_parts)
-
-            # The stripped prefix is count copies of first_comp
-            stripped_prefix = "/".join([first_comp] * count)
-            return stripped_prefix
+        # All common parts are the same - this is a WinRAR nested duplicate case
+        # Return just ONE occurrence so extraction strips to one level
+        # e.g., "a/a/SKILL.md" -> strips "a" prefix -> "a/SKILL.md"
+        return common[0]
 
     return "/".join(common)
 

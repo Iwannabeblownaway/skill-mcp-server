@@ -77,20 +77,21 @@ class TestFlattenSingleTopLevelDir:
         assert _flatten_single_top_level_dir(entries) == "skill"
 
     def test_winrar_nested_duplicate_double_level(self):
-        """WinRAR nested duplicate dirs like skill/skill/SKILL.md should strip both levels."""
+        """WinRAR nested duplicate dirs like a/a/SKILL.md should keep one level."""
         from app.admin.router import _flatten_single_top_level_dir
 
         # WinRAR case - nested duplicate directory names
-        entries = ["skill/skill/SKILL.md", "skill/skill/README.md"]
-        # Should strip "skill/skill" not just "skill"
-        assert _flatten_single_top_level_dir(entries) == "skill/skill"
+        entries = ["skill-auditor/skill-auditor/SKILL.md", "skill-auditor/skill-auditor/README.md"]
+        # Should strip to just one level: "skill-auditor/skill-auditor" -> "skill-auditor"
+        assert _flatten_single_top_level_dir(entries) == "skill-auditor"
 
     def test_winrar_nested_duplicate_triple_level(self):
-        """WinRAR nested duplicate dirs with 3 levels."""
+        """WinRAR nested duplicate dirs with 3 levels should keep one level."""
         from app.admin.router import _flatten_single_top_level_dir
 
+        # a/a/a/ -> a/ (keep one)
         entries = ["a/a/a/SKILL.md", "a/a/a/README.md"]
-        assert _flatten_single_top_level_dir(entries) == "a/a/a"
+        assert _flatten_single_top_level_dir(entries) == "a"
 
     def test_winrar_nested_not_consecutive(self):
         """Non-consecutive duplicates should NOT be stripped."""
