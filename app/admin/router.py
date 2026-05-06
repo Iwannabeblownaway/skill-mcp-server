@@ -738,6 +738,17 @@ async def skill_upload(
                     entries = [info.filename.replace("\\", "/") for info in zf.infolist() if not info.is_dir()]
                     common_prefix = _flatten_single_top_level_dir(entries)
 
+                    # Also check if first directory matches skill name (common case)
+                    # If zip contains "skill-auditor/SKILL.md" and skill_dir is already
+                    # "skills/skill-auditor/", we don't want another "skill-auditor/" layer
+                    skill_name = skill["name"]
+                    first_dir_to_strip = None
+                    if entries:
+                        first_entry = entries[0]
+                        first_parts = list(filter(None, first_entry.split("/")))
+                        if len(first_parts) >= 1 and first_parts[0] == skill_name:
+                            first_dir_to_strip = skill_name
+
                     extracted_count = 0
                     for info in zf.infolist():
                         if info.is_dir():
@@ -747,6 +758,11 @@ async def skill_upload(
                         # Strip common prefix if all files are under one directory
                         if common_prefix:
                             entry_name = entry_name[len(common_prefix) + 1:]
+                        # Also strip first directory if it matches skill name
+                        if first_dir_to_strip:
+                            entry_parts = list(filter(None, entry_name.split("/")))
+                            if len(entry_parts) >= 1 and entry_parts[0] == first_dir_to_strip:
+                                entry_name = "/".join(entry_parts[1:])
                         # Skip empty or directory-like entries
                         if not entry_name or entry_name.endswith("/") or entry_name.endswith("\\"):
                             continue
@@ -769,8 +785,17 @@ async def skill_upload(
                 # .tar, .tar.gz, .tgz, .tar.bz2, .tar.xz
                 import tarfile
                 with tarfile.open(fileobj=file_io, mode="r:*") as tf:
-                    entries = [m.name for m in tf.getmembers() if not m.isdir()]
+                    entries = [m.name.replace("\\", "/") for m in tf.getmembers() if not m.isdir()]
                     common_prefix = _flatten_single_top_level_dir(entries)
+
+                    # Also strip first directory if it matches skill name
+                    skill_name = skill["name"]
+                    first_dir_to_strip = None
+                    if entries:
+                        first_entry = entries[0]
+                        first_parts = list(filter(None, first_entry.split("/")))
+                        if len(first_parts) >= 1 and first_parts[0] == skill_name:
+                            first_dir_to_strip = skill_name
 
                     extracted_count = 0
                     for member in tf.getmembers():
@@ -781,6 +806,11 @@ async def skill_upload(
                         # Strip common prefix if all files are under one directory
                         if common_prefix:
                             entry_name = entry_name[len(common_prefix) + 1:]
+                        # Also strip first directory if it matches skill name
+                        if first_dir_to_strip:
+                            entry_parts = list(filter(None, entry_name.split("/")))
+                            if len(entry_parts) >= 1 and entry_parts[0] == first_dir_to_strip:
+                                entry_name = "/".join(entry_parts[1:])
                         # Skip empty or directory-like entries
                         if not entry_name or entry_name.endswith("/") or entry_name.endswith("\\"):
                             continue
