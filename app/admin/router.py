@@ -162,6 +162,51 @@ def _parse_dependencies(dependencies_input: str) -> list:
     return [d.strip() for d in dependencies_input.split(",") if d.strip()]
 
 
+def _build_skill_package(skill_name: str, skill_path: str) -> Path:
+    """Build a .skill package (zip file) from skill folder.
+
+    Args:
+        skill_name: Skill name
+        skill_path: Relative path to skill folder
+
+    Returns:
+        Path to the generated .skill package (actually a zip file)
+    """
+    skill_dir = skill_crud.SKILLS_DIR / skill_path
+    if not skill_dir.exists():
+        raise FileNotFoundError(f"Skill folder not found: {skill_dir}")
+
+    # Create packages directory alongside skills
+    packages_dir = skill_crud.SKILLS_DIR.parent / "skill_packages"
+    packages_dir.mkdir(exist_ok=True)
+
+    # Build .skill file path (still a zip internally)
+    package_path = packages_dir / f"{skill_name}.skill"
+
+    # Create zip
+    with zipfile.ZipFile(package_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file_path in skill_dir.rglob("*"):
+            if file_path.is_file():
+                arcname = file_path.relative_to(skill_dir)
+                zf.write(file_path, arcname)
+
+    return package_path
+
+
+def _get_skill_package_path(skill_name: str) -> Optional[Path]:
+    """Get path to .skill package if it exists.
+
+    Args:
+        skill_name: Skill name
+
+    Returns:
+        Path to .skill package or None if not found
+    """
+    packages_dir = skill_crud.SKILLS_DIR.parent / "skill_packages"
+    package_path = packages_dir / f"{skill_name}.skill"
+    return package_path if package_path.exists() else None
+
+
 # ==================== Session Management ====================
 
 async def create_admin_session(user: dict) -> str:

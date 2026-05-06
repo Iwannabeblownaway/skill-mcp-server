@@ -3,6 +3,7 @@
 import pytest
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 # Add app to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -189,3 +190,134 @@ class TestParseDependencies:
 
         content = response.body.decode()
         assert "/users?id=1&name=test" in content or "users" in content
+
+
+class TestBuildSkillPackage:
+    """Tests for _build_skill_package helper."""
+
+    def test_build_skill_package_creates_zip(self, tmp_path):
+        """Test that _build_skill_package creates a valid zip file."""
+        import zipfile
+        from app.admin.router import _build_skill_package
+        from app.db.crud import skill as skill_crud
+
+        # Create a mock SKILLS_DIR in temp location
+        mock_skills_dir = tmp_path / "skills"
+        mock_skills_dir.mkdir()
+
+        # Create a skill folder with some files
+        skill_name = "test-skill"
+        skill_path = skill_name
+        skill_dir = mock_skills_dir / skill_path
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("# Test Skill")
+        (skill_dir / "README.md").write_text("Test README")
+
+        with patch.object(skill_crud, "SKILLS_DIR", mock_skills_dir):
+            package_path = _build_skill_package(skill_name, skill_path)
+
+            # Check package was created
+            assert package_path.exists()
+            assert package_path.name == f"{skill_name}.skill"
+
+            # Verify it's a valid zip file
+            assert zipfile.is_zipfile(package_path)
+
+            # Verify zip contents
+            with zipfile.ZipFile(package_path, "r") as zf:
+                names = zf.namelist()
+                assert "SKILL.md" in names
+                assert "README.md" in names
+
+    def test_build_skill_package_raises_if_folder_missing(self, tmp_path):
+        """Test that _build_skill_package raises FileNotFoundError if skill folder missing."""
+        from app.admin.router import _build_skill_package
+        from app.db.crud import skill as skill_crud
+
+        mock_skills_dir = tmp_path / "skills"
+        mock_skills_dir.mkdir()
+
+        with patch.object(skill_crud, "SKILLS_DIR", mock_skills_dir):
+            with pytest.raises(FileNotFoundError) as exc_info:
+                _build_skill_package("nonexistent", "nonexistent")
+
+            assert "Skill folder not found" in str(exc_info.value)
+
+    def test_build_skill_package_nested_files(self, tmp_path):
+        """Test that _build_skill_package correctly handles nested directory structure."""
+        import zipfile
+        from app.admin.router import _build_skill_package
+        from app.db.crud import skill as skill_crud
+
+        mock_skills_dir = tmp_path / "skills"
+        mock_skills_dir.mkdir()
+
+        skill_name = "nested-skill"
+        skill_dir = mock_skills_dir / skill_name
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("# Nested")
+        subdir = skill_dir / "subdir"
+        subdir.mkdir()
+        (subdir / "helper.py").write_text("def foo(): pass")
+
+        with patch.object(skill_crud, "SKILLS_DIR", mock_skills_dir):
+            package_path = _build_skill_package(skill_name, skill_name)
+
+            with zipfile.ZipFile(package_path, "r") as zf:
+                names = zf.namelist()
+                assert "SKILL.md" in names
+                assert "subdir/helper.py" in names
+
+
+class TestGetSkillPackagePath:
+    """Tests for _get_skill_package_path helper."""
+
+    def test_returns_path_when_package_exists(self, tmp_path):
+        """Test that _get_skill_package_path returns Path when package exists."""
+        from app.admin.router import _get_skill_package_path
+        from app.db.crud import skill as skill_crud
+
+        mock_skills_dir = tmp_path / "skills"
+        mock_skills_dir.mkdir()
+        packages_dir = mock_skills_dir.parent / "skill_packages"
+        packages_dir.mkdir()
+        package_path = packages_dir / "test-skill.skill"
+        package_path.write_bytes(b"fake zip content")
+
+        with patch.object(skill_crud, "SKILLS_DIR", mock_skills_dir):
+            result = _get_skill_package_path("test-skill")
+
+            assert result is not None
+            assert result == package_path
+            assert result.exists()
+
+    def test_returns_none_when_package_missing(self, tmp_path):
+        """Test that _get_skill_package_path returns None when package doesn't exist."""
+        from app.admin.router import _get_skill_package_path
+        from app.db.crud import skill as skill_crud
+
+        mock_skills_dir = tmp_path / "skills"
+        mock_skills_dir.mkdir()
+        # Don't create the packages dir
+
+        with patch.object(skill_crud, "SKILLS_DIR", mock_skills_dir):
+            result = _get_skill_package_path("nonexistent-skill")
+
+            assert result is None
+
+    def test_package_path_uses_skill_name(self, tmp_path):
+        """Test that package path is correctly formed from skill name."""
+        from app.admin.router import _get_skill_package_path
+        from app.db.crud import skill as skill_crud
+
+        mock_skills_dir = tmp_path / "skills"
+        mock_skills_dir.mkdir()
+        packages_dir = mock_skills_dir.parent / "skill_packages"
+        packages_dir.mkdir()
+        (packages_dir / "my-cool-skill.skill").write_bytes(b"")
+
+        with patch.object(skill_crud, "SKILLS_DIR", mock_skills_dir):
+            result = _get_skill_package_path("my-cool-skill")
+
+            assert result is not None
+            assert result.name == "my-cool-skill.skill"
