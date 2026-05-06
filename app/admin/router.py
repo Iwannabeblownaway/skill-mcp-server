@@ -1043,6 +1043,7 @@ async def log_list(
     start_time: datetime = Query(default=None),
     end_time: datetime = Query(default=None),
     page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
 ):
     """List call logs with filters."""
     # Convert user_id from string to int if provided
