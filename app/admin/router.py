@@ -99,51 +99,64 @@ def set_message(request: Request, text: str, type: str = "success"):
 # ==================== Helper Functions ====================
 
 def _flatten_single_top_level_dir(entries: list[str]) -> str:
-    """Detect if all entries are under a single top-level directory.
+    """Detect WinRAR-style nested duplicate directories that need stripping.
 
-    If all file entries share a common parent directory, return that prefix so it can be stripped.
-    Handles both forward slashes (Unix) and backslashes (Windows) in archive entries.
+    Only strips when ALL entries have consecutive duplicate directory names
+    at the start of their paths (e.g., "a/a/SKILL.md"). This handles the
+    WinRAR case where compressing a folder from inside creates nested duplicate
+    parent directories.
 
-    Also handles nested duplicate directories created by some zip tools (e.g., WinRAR
-    creating "skill-auditor/skill-auditor/" structure). If the common prefix consists of
-    consecutive duplicate directory names, strips to just one level.
+    Normal cases are NOT stripped:
+    - "skill/SKILL.md" -> returns "" (no stripping)
+    - "a/b/SKILL.md" -> returns "" (no consecutive duplicates)
+
+    WinRAR case IS stripped:
+    - "skill/skill/SKILL.md" -> returns "skill" (strip one level)
 
     Args:
-        entries: List of file entry paths (e.g., ["mcp-builder/SKILL.md", "mcp-builder/README.md"])
+        entries: List of file entry paths
 
     Returns:
-        The common directory prefix if all entries share one, empty string otherwise.
+        Single directory name to strip if consecutive duplicates detected,
+        empty string otherwise.
     """
     if not entries:
         return ""
 
-    # Normalize all separators to forward slashes for cross-platform compatibility
+    # Normalize all separators to forward slashes
     normalized = [e.replace("\\", "/") for e in entries]
-    # Remove empty parts from split (handles "//" in paths)
     parts_list = [list(filter(None, e.split("/"))) for e in normalized]
-    if not all(parts_list):
+    if not all(parts_list) or len(parts_list[0]) < 2:
         return ""
 
-    # Find common prefix
-    common = []
-    for parts in zip(*parts_list):
-        if len(set(parts)) == 1:
-            common.append(parts[0])
+    # Check if we have consecutive duplicate directory names at the start
+    first_parts = parts_list[0]
+    if len(first_parts) < 2:
+        return ""
+
+    # Count consecutive occurrences of first directory name
+    first_name = first_parts[0]
+    consecutive_count = 1
+    for i in range(1, len(first_parts)):
+        if first_parts[i] == first_name:
+            consecutive_count += 1
         else:
             break
 
-    if not common:
+    # Only strip if we have 2+ consecutive duplicates AND all entries share this
+    if consecutive_count < 2:
         return ""
 
-    # Check if common prefix consists of consecutive duplicate directory names
-    # e.g., ["a", "a"] for "a/a/" - WinRAR nested duplicate case
-    if len(common) >= 2 and len(set(common)) == 1:
-        # All common parts are the same - this is a WinRAR nested duplicate case
-        # Return just ONE occurrence so extraction strips to one level
-        # e.g., "a/a/SKILL.md" -> strips "a" prefix -> "a/SKILL.md"
-        return common[0]
+    # Verify ALL entries have at least this many consecutive duplicates
+    for parts in parts_list:
+        if len(parts) < consecutive_count:
+            return ""
+        for i in range(consecutive_count):
+            if parts[i] != first_name:
+                return ""
 
-    return "/".join(common)
+    # Return just ONE occurrence to strip (keeps one level)
+    return first_name
 
 
 def _parse_dependencies(dependencies_input: str) -> list:

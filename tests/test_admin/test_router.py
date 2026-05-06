@@ -13,11 +13,11 @@ class TestFlattenSingleTopLevelDir:
     """Tests for _flatten_single_top_level_dir helper."""
 
     def test_nested_folder(self):
-        """All files under one folder should return that folder prefix."""
+        """Normal single directory wrapping - NO stripping."""
         from app.admin.router import _flatten_single_top_level_dir
 
         entries = ["mcp-builder/SKILL.md", "mcp-builder/README.md"]
-        assert _flatten_single_top_level_dir(entries) == "mcp-builder"
+        assert _flatten_single_top_level_dir(entries) == ""
 
     def test_flat_files(self):
         """Flat files with no common directory return empty string."""
@@ -34,11 +34,11 @@ class TestFlattenSingleTopLevelDir:
         assert _flatten_single_top_level_dir(entries) == ""
 
     def test_deeply_nested(self):
-        """Deeply nested common prefix is returned."""
+        """Deeply nested paths - NO stripping."""
         from app.admin.router import _flatten_single_top_level_dir
 
         entries = ["a/b/c/file1.txt", "a/b/c/file2.txt"]
-        assert _flatten_single_top_level_dir(entries) == "a/b/c"
+        assert _flatten_single_top_level_dir(entries) == ""
 
     def test_empty_list(self):
         """Empty list returns empty string."""
@@ -47,67 +47,69 @@ class TestFlattenSingleTopLevelDir:
         assert _flatten_single_top_level_dir([]) == ""
 
     def test_windows_backslash_paths(self):
-        """Windows-style paths with backslashes should be normalized."""
+        """Windows-style paths with backslashes - NO stripping."""
         from app.admin.router import _flatten_single_top_level_dir
 
-        # Windows-style paths with backslashes
         entries = [r"mcp-builder\SKILL.md", r"mcp-builder\README.md"]
-        assert _flatten_single_top_level_dir(entries) == "mcp-builder"
+        assert _flatten_single_top_level_dir(entries) == ""
 
     def test_mixed_slash_paths(self):
-        """Mixed forward and backslash paths should still detect common prefix."""
+        """Mixed forward and backslash paths - NO stripping."""
         from app.admin.router import _flatten_single_top_level_dir
 
         entries = [r"mcp-builder/SKILL.md", r"mcp-builder\README.md"]
-        assert _flatten_single_top_level_dir(entries) == "mcp-builder"
+        assert _flatten_single_top_level_dir(entries) == ""
 
     def test_deeply_nested_backslash(self):
-        """Deeply nested Windows paths should return correct prefix."""
+        """Deeply nested Windows paths - NO stripping."""
         from app.admin.router import _flatten_single_top_level_dir
 
         entries = [r"a\b\c\file1.txt", r"a\b\c\file2.txt"]
-        assert _flatten_single_top_level_dir(entries) == "a/b/c"
+        assert _flatten_single_top_level_dir(entries) == ""
 
-    def test_winrar_nested_duplicate_single_level(self):
-        """Single-level prefix like skill/SKILL.md should return 'skill' prefix."""
+    def test_normal_single_level_no_strip(self):
+        """Normal single-level prefix like skill/SKILL.md should NOT be stripped."""
         from app.admin.router import _flatten_single_top_level_dir
 
-        # Normal case - single directory wrapping
         entries = ["skill/SKILL.md", "skill/README.md"]
-        assert _flatten_single_top_level_dir(entries) == "skill"
+        assert _flatten_single_top_level_dir(entries) == ""
 
-    def test_winrar_nested_duplicate_double_level(self):
-        """WinRAR nested duplicate dirs like a/a/SKILL.md should keep one level."""
+    def test_winrar_double_level_strip_one(self):
+        """WinRAR nested duplicate dirs like skill/skill/SKILL.md should strip to one level."""
         from app.admin.router import _flatten_single_top_level_dir
 
-        # WinRAR case - nested duplicate directory names
+        # WinRAR case: "skill-auditor/skill-auditor/SKILL.md" -> strip one -> "skill-auditor/SKILL.md"
         entries = ["skill-auditor/skill-auditor/SKILL.md", "skill-auditor/skill-auditor/README.md"]
-        # Should strip to just one level: "skill-auditor/skill-auditor" -> "skill-auditor"
         assert _flatten_single_top_level_dir(entries) == "skill-auditor"
 
-    def test_winrar_nested_duplicate_triple_level(self):
-        """WinRAR nested duplicate dirs with 3 levels should keep one level."""
+    def test_winrar_triple_level_strip_two(self):
+        """WinRAR nested duplicate dirs with 3 levels should strip to one level."""
         from app.admin.router import _flatten_single_top_level_dir
 
-        # a/a/a/ -> a/ (keep one)
+        # "a/a/a/SKILL.md" -> strip two -> "a/SKILL.md"
         entries = ["a/a/a/SKILL.md", "a/a/a/README.md"]
         assert _flatten_single_top_level_dir(entries) == "a"
 
-    def test_winrar_nested_not_consecutive(self):
-        """Non-consecutive duplicates should NOT be stripped."""
+    def test_non_consecutive_not_stripped(self):
+        """Non-consecutive duplicates like a/b should NOT be stripped."""
         from app.admin.router import _flatten_single_top_level_dir
 
-        # "a/b" prefix - b is not same as a, so no consecutive duplicate
         entries = ["a/b/SKILL.md", "a/b/README.md"]
-        assert _flatten_single_top_level_dir(entries) == "a/b"
+        assert _flatten_single_top_level_dir(entries) == ""
 
-    def test_empty_result_after_stripping(self):
-        """If stripping would leave empty paths, handle gracefully."""
+    def test_single_file_at_root(self):
+        """Single file at root of zip returns empty string."""
         from app.admin.router import _flatten_single_top_level_dir
 
-        # Single file at root of zip
         entries = ["SKILL.md", "README.md"]
         assert _flatten_single_top_level_dir(entries) == ""
+
+    def test_winrar_single_file_no_strip(self):
+        """Single file inside WinRAR-style nested dir should not trigger stripping."""
+        from app.admin.router import _flatten_single_top_level_dir
+
+        entries = ["skill-auditor/skill-auditor/SKILL.md"]
+        assert _flatten_single_top_level_dir(entries) == "skill-auditor"
 
 
 class TestRedirectWithMessage:
