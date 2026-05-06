@@ -430,8 +430,13 @@ async def user_create(
     role: str = Form("user"),
 ):
     """Create a new user."""
-    # Convert empty user_id to None
-    user_id_value = user_id if user_id.strip() != "" else None
+    import secrets
+
+    # Generate user_id if not provided
+    if user_id.strip() == "":
+        user_id_value = None
+    else:
+        user_id_value = user_id.strip()
 
     async with get_db() as conn:
         # Check if user_id already exists (only if provided)
@@ -441,6 +446,22 @@ async def user_create(
                 return redirect_with_message(
                     "/admin/users/create",
                     f"用户 ID '{user_id}' 已存在",
+                    "error"
+                )
+        else:
+            # Generate a unique user_id if not provided
+            attempts = 0
+            while attempts < 5:
+                generated_id = secrets.token_hex(8)
+                existing = await user_crud.get_by_user_id(conn, generated_id)
+                if not existing:
+                    user_id_value = generated_id
+                    break
+                attempts += 1
+            if not user_id_value:
+                return redirect_with_message(
+                    "/admin/users/create",
+                    "用户 ID 生成失败，请重试",
                     "error"
                 )
 
