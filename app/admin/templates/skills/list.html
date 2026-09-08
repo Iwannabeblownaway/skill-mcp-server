@@ -1,59 +1,80 @@
 {% extends "base.html" %}
+{% import "_components.html" as ui %}
 
 {% block title %}技能管理 - Skill MCP Admin{% endblock %}
 
+{% block breadcrumb %}
+{{ ui.breadcrumb([{'label': '技能'}]) }}
+{% endblock %}
+
 {% block content %}
-<div class="mb-8 flex justify-between items-center">
-    <div>
-        <h1 class="text-3xl font-bold text-gray-800">技能管理</h1>
-        <p class="text-gray-600 mt-2">管理系统技能</p>
-    </div>
-    <a href="/admin/skills/create" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition">
-        + 创建技能
-    </a>
+{% set actions %}
+<a href="/admin/skills/create" class="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-lg transition">
+    <i data-lucide="plus" class="w-4 h-4"></i>
+    创建技能
+</a>
+{% endset %}
+{{ ui.page_header('技能管理', '管理系统技能及其 MCP 依赖', actions) }}
+
+<!-- Search bar (visual only; GET form preserved) -->
+<div class="mb-4">
+    <form method="get" action="/admin/skills" class="flex items-center gap-2 max-w-md">
+        <div class="relative flex-1">
+            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"></i>
+            <input type="search" name="q" placeholder="搜索技能名..."
+                class="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition">
+        </div>
+        <button type="submit" class="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-lg transition">
+            <i data-lucide="search" class="w-4 h-4"></i>
+            搜索
+        </button>
+    </form>
 </div>
 
-<div class="bg-white rounded-lg shadow overflow-hidden">
-    <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-            <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">名称</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">依赖</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">描述</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">更新时间</th>
-                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
-            </tr>
-        </thead>
-        <tbody class="bg-white divide-y divide-gray-200">
-            {% for skill in skills %}
-            <tr class="hover:bg-gray-50">
-                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ skill.name }}</td>
-                <td class="px-6 py-4 text-sm text-gray-500">
-                    {% if skill.dependencies and skill.dependencies|length > 0 %}
-                    <span class="text-orange-600" title="{{ skill.dependencies|join(', ') }}">
-                        {{ skill.dependencies|length }} 个MCP依赖
-                    </span>
-                    {% else %}
-                    <span class="text-gray-400">-</span>
-                    {% endif %}
-                </td>
-                <td class="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">{{ skill.description or '-' }}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ skill.updated_at.strftime('%Y-%m-%d') if skill.updated_at else '-' }}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                    <a href="/admin/skills/{{ skill.id }}" class="text-blue-600 hover:text-blue-900">详情</a>
-                    <form method="post" action="/admin/skills/{{ skill.id }}/delete" class="inline" onsubmit="return confirm('确定删除技能 {{ skill.name }}? 此操作会删除所有相关文件。')">
-                        <button type="submit" class="text-red-600 hover:text-red-900">删除</button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
-
-{% if not skills %}
-<div class="text-center py-12 text-gray-500">
-    <p>暂无技能</p>
-</div>
+{% if skills %}
+{% call ui.data_table(['名称', 'MCP 依赖', '描述', '状态', '更新时间', '']) %}
+    {% for skill in skills %}
+    <tr class="hover:bg-slate-50 transition">
+        <td class="px-6 py-4 whitespace-nowrap">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center shrink-0">
+                    <i data-lucide="package" class="w-4 h-4 text-slate-500"></i>
+                </div>
+                <span class="text-sm font-medium text-slate-900">{{ skill.name }}</span>
+            </div>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+            {% if skill.dependencies and skill.dependencies|length > 0 %}
+            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700" title="{{ skill.dependencies|join(', ') }}">
+                <i data-lucide="link-2" class="w-3 h-3"></i>
+                {{ skill.dependencies|length }} 个依赖
+            </span>
+            {% else %}
+            <span class="text-xs text-slate-400">-</span>
+            {% endif %}
+        </td>
+        <td class="px-6 py-4 text-sm text-slate-500 max-w-xs truncate">{{ skill.description or '-' }}</td>
+        <td class="px-6 py-4 whitespace-nowrap">
+            {{ ui.status_pill(skill.status or 'active') }}
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+            <div class="flex items-center gap-1.5">
+                <i data-lucide="calendar" class="w-3.5 h-3.5 text-slate-400"></i>
+                {{ skill.updated_at.strftime('%Y-%m-%d') if skill.updated_at else '-' }}
+            </div>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap text-right">
+            <div class="inline-flex items-center gap-1">
+                {{ ui.icon_button(href='/admin/skills/' ~ skill.id, icon='eye', label='详情', color='blue') }}
+                <form method="post" action="/admin/skills/{{ skill.id }}/delete" class="inline" onsubmit="return confirm('确定删除技能 {{ skill.name }}? 此操作会删除所有相关文件。')">
+                    {{ ui.icon_button(icon='trash-2', label='删除', color='red', type='submit') }}
+                </form>
+            </div>
+        </td>
+    </tr>
+    {% endfor %}
+{% endcall %}
+{% else %}
+{{ ui.empty_state('package', '暂无技能', '创建第一个技能并上传文件以开始使用', action_label='创建技能', action_href='/admin/skills/create') }}
 {% endif %}
 {% endblock %}

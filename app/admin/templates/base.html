@@ -4,94 +4,147 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Skill MCP Admin{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        html, body {
+            font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        }
+        [data-lucide] { display: inline-block; vertical-align: middle; }
+    </style>
 </head>
-<body class="bg-gray-100 min-h-screen">
-    <!-- Navigation -->
-    <nav class="bg-white shadow-lg">
-        <div class="max-w-7xl mx-auto px-4">
-            <div class="flex justify-between h-16">
-                <div class="flex space-x-8">
-                    <a href="/admin" class="inline-flex items-center px-2 py-2 text-gray-700 hover:text-blue-600 {% if request.url.path == '/admin' %}text-blue-600 font-semibold{% endif %}">
-                        概览
-                    </a>
-                    <a href="/admin/users" class="inline-flex items-center px-2 py-2 text-gray-700 hover:text-blue-600 {% if '/admin/users' in request.url.path %}text-blue-600 font-semibold{% endif %}">
-                        用户
-                    </a>
-                    <a href="/admin/skills" class="inline-flex items-center px-2 py-2 text-gray-700 hover:text-blue-600 {% if '/admin/skills' in request.url.path %}text-blue-600 font-semibold{% endif %}">
-                        技能
-                    </a>
-                    <a href="/admin/authorizations" class="inline-flex items-center px-2 py-2 text-gray-700 hover:text-blue-600 {% if '/admin/authorizations' in request.url.path %}text-blue-600 font-semibold{% endif %}">
-                        授权
-                    </a>
-                    <a href="/admin/logs" class="inline-flex items-center px-2 py-2 text-gray-700 hover:text-blue-600 {% if '/admin/logs' in request.url.path %}text-blue-600 font-semibold{% endif %}">
-                        日志
-                    </a>
-                </div>
-                <div class="flex items-center space-x-4">
-                    <span class="text-sm text-gray-500">{{ admin_user.username }}</span>
-                    <a href="/admin/logout" class="inline-flex items-center px-3 py-1 text-sm text-white bg-red-600 hover:bg-red-700 rounded-md">
-                        退出
-                    </a>
-                </div>
-
+<body class="bg-slate-50 text-slate-900 min-h-screen">
+    {% set p = request.url.path %}
+    {% if p.startswith('/admin/') and p != '/admin/login' %}
+    <div class="flex min-h-screen">
+        <!-- Sidebar -->
+        <aside class="w-60 bg-slate-900 text-slate-300 flex flex-col shrink-0">
+            <div class="h-16 flex items-center px-5 border-b border-slate-800">
+                <a href="/admin" class="flex items-center gap-2.5 text-white">
+                    <span class="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
+                        <i data-lucide="zap" class="w-5 h-5 text-white"></i>
+                    </span>
+                    <span class="font-semibold text-[15px] tracking-tight">Skill MCP</span>
+                </a>
             </div>
-        </div>
-    </nav>
 
-    <!-- Main Content -->
-    <main class="max-w-7xl mx-auto px-4 py-8">
-        <!-- Flash Message (from sessionStorage, auto-cleared) -->
-        <div id="flash-message" class="mb-4 p-4 pr-16 rounded-lg relative hidden">
-            <span id="flash-text"></span>
-            <span id="flash-countdown" class="absolute right-10 top-1/2 -translate-y-1/2 text-sm opacity-60"></span>
-            <button type="button" onclick="document.getElementById('flash-message').classList.add('hidden')" class="absolute top-2 right-2 w-6 h-6 flex items-center justify-center rounded-full hover:bg-black/10 text-current">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                </svg>
-            </button>
-        </div>
+            <nav class="flex-1 px-3 py-4 space-y-1">
+                <a href="/admin" class="flex items-center gap-3 pl-3 pr-3 py-2 text-sm rounded-r-lg border-l-[3px] transition
+                    {% if p == '/admin' %}bg-slate-800 text-white border-emerald-500 font-medium{% else %}border-transparent hover:bg-slate-800 hover:text-white{% endif %}">
+                    <i data-lucide="layout-dashboard" class="w-4 h-4 shrink-0"></i>
+                    概览
+                </a>
+                <a href="/admin/users" class="flex items-center gap-3 pl-3 pr-3 py-2 text-sm rounded-r-lg border-l-[3px] transition
+                    {% if '/admin/users' in p %}bg-slate-800 text-white border-emerald-500 font-medium{% else %}border-transparent hover:bg-slate-800 hover:text-white{% endif %}">
+                    <i data-lucide="users" class="w-4 h-4 shrink-0"></i>
+                    用户
+                </a>
+                <a href="/admin/skills" class="flex items-center gap-3 pl-3 pr-3 py-2 text-sm rounded-r-lg border-l-[3px] transition
+                    {% if '/admin/skills' in p %}bg-slate-800 text-white border-emerald-500 font-medium{% else %}border-transparent hover:bg-slate-800 hover:text-white{% endif %}">
+                    <i data-lucide="package" class="w-4 h-4 shrink-0"></i>
+                    技能
+                </a>
+                <a href="/admin/authorizations" class="flex items-center gap-3 pl-3 pr-3 py-2 text-sm rounded-r-lg border-l-[3px] transition
+                    {% if '/admin/authorizations' in p %}bg-slate-800 text-white border-emerald-500 font-medium{% else %}border-transparent hover:bg-slate-800 hover:text-white{% endif %}">
+                    <i data-lucide="shield-check" class="w-4 h-4 shrink-0"></i>
+                    授权
+                </a>
+                <a href="/admin/logs" class="flex items-center gap-3 pl-3 pr-3 py-2 text-sm rounded-r-lg border-l-[3px] transition
+                    {% if '/admin/logs' in p %}bg-slate-800 text-white border-emerald-500 font-medium{% else %}border-transparent hover:bg-slate-800 hover:text-white{% endif %}">
+                    <i data-lucide="activity" class="w-4 h-4 shrink-0"></i>
+                    日志
+                </a>
+            </nav>
 
-        {% block content %}{% endblock %}
-    </main>
+            <div class="p-3 border-t border-slate-800">
+                <div class="flex items-center gap-3 px-3 py-2">
+                    <div class="w-8 h-8 bg-slate-700 rounded-full flex items-center justify-center shrink-0">
+                        <i data-lucide="user" class="w-4 h-4 text-slate-300"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm text-white font-medium truncate">{{ admin_user.username }}</p>
+                        <p class="text-xs text-slate-500">管理员</p>
+                    </div>
+                </div>
+                <a href="/admin/logout" class="mt-2 flex items-center justify-center gap-2 w-full px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition">
+                    <i data-lucide="log-out" class="w-4 h-4"></i>
+                    退出登录
+                </a>
+            </div>
+        </aside>
 
-    <!-- Footer -->
-    <footer class="bg-white border-t mt-auto py-4">
-        <div class="max-w-7xl mx-auto px-4 text-center text-gray-500 text-sm">
-            Skill MCP Server Admin Panel
+        <!-- Main content -->
+        <div class="flex-1 flex flex-col min-w-0">
+            <header class="h-14 bg-white border-b border-slate-200 flex items-center px-8 shrink-0">
+                {% block breadcrumb %}
+                <span class="text-sm text-slate-500">仪表盘</span>
+                {% endblock %}
+            </header>
+            <main class="flex-1 px-8 py-6 overflow-x-auto">
+                {% block content %}{% endblock %}
+            </main>
         </div>
-    </footer>
+    </div>
+
+    <!-- Toast container (top-right) -->
+    <div id="toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+    {% else %}
+    {% block content %}{% endblock %}
+    {% endif %}
 
     <script>
     (function() {
-        const msg = sessionStorage.getItem('flash_message');
-        const type = sessionStorage.getItem('flash_message_type');
-        if (msg) {
-            const el = document.getElementById('flash-message');
-            const textEl = document.getElementById('flash-text');
-            const countdownEl = document.getElementById('flash-countdown');
-            textEl.textContent = msg;
-            el.classList.remove('hidden');
-            if (type === 'error') {
-                el.classList.add('bg-red-100', 'text-red-700', 'border', 'border-red-400');
-            } else {
-                el.classList.add('bg-green-100', 'text-green-700', 'border', 'border-green-400');
+        function renderIcons() {
+            if (window.lucide && typeof lucide.createIcons === 'function') {
+                lucide.createIcons();
             }
-            // Clear immediately after reading
+        }
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', renderIcons);
+        } else {
+            renderIcons();
+        }
+
+        var msg = sessionStorage.getItem('flash_message');
+        var type = sessionStorage.getItem('flash_message_type');
+        if (msg) {
             sessionStorage.removeItem('flash_message');
             sessionStorage.removeItem('flash_message_type');
-            // Auto hide after 5 seconds with countdown
-            let remaining = 5;
-            countdownEl.textContent = remaining + 's';
-            const timer = setInterval(() => {
-                remaining--;
-                if (remaining <= 0) {
-                    clearInterval(timer);
-                    el.classList.add('hidden');
-                } else {
-                    countdownEl.textContent = remaining + 's';
-                }
-            }, 1000);
+            var container = document.getElementById('toast-container');
+            if (container) {
+                var isError = type === 'error';
+                var icon = isError ? 'alert-circle' : 'check-circle-2';
+                var borderCls = isError ? 'border-red-200' : 'border-emerald-200';
+                var iconColor = isError ? 'text-red-500' : 'text-emerald-500';
+                var el = document.createElement('div');
+                el.className = 'pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-xl border shadow-lg min-w-[300px] max-w-md bg-white ' + borderCls;
+                el.style.opacity = '0';
+                el.style.transform = 'translateX(20px)';
+                el.style.transition = 'all 0.3s';
+                el.innerHTML =
+                    '<i data-lucide="' + icon + '" class="w-5 h-5 shrink-0 mt-0.5 ' + iconColor + '"></i>' +
+                    '<span class="text-sm flex-1 text-slate-900"></span>' +
+                    '<button type="button" class="text-slate-400 hover:text-slate-600 shrink-0" aria-label="Close">' +
+                    '<i data-lucide="x" class="w-4 h-4"></i></button>';
+                el.querySelector('span').textContent = msg;
+                el.querySelector('button').addEventListener('click', function() { dismiss(el); });
+                container.appendChild(el);
+                renderIcons();
+                requestAnimationFrame(function() {
+                    el.style.opacity = '1';
+                    el.style.transform = 'translateX(0)';
+                });
+                setTimeout(function() { dismiss(el); }, 5000);
+            }
+        }
+        function dismiss(el) {
+            if (!el || !el.parentNode) return;
+            el.style.opacity = '0';
+            el.style.transform = 'translateX(20px)';
+            setTimeout(function() { if (el.parentNode) el.parentNode.removeChild(el); }, 300);
         }
     })();
     </script>

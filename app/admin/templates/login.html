@@ -4,47 +4,98 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>登录 - Skill MCP Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        html, body {
+            font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        }
+        [data-lucide] { display: inline-block; vertical-align: middle; }
+    </style>
 </head>
-<body class="bg-gray-100 min-h-screen flex items-center justify-center">
-    <div class="max-w-md w-full mx-4">
-        <div class="bg-white rounded-lg shadow-lg p-8">
-            <div class="text-center mb-8">
-                <h1 class="text-2xl font-bold text-gray-800">Skill MCP Admin</h1>
-                <p class="text-gray-500 mt-2">请登录以继续</p>
+<body class="bg-slate-50 min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-4xl bg-white rounded-2xl shadow-xl overflow-hidden grid grid-cols-1 md:grid-cols-2 min-h-[480px]">
+
+        <!-- Brand panel (left) -->
+        <div class="hidden md:flex flex-col justify-between p-10 bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-700 text-white relative overflow-hidden">
+            <div class="absolute -right-16 -top-16 w-64 h-64 bg-white/10 rounded-full"></div>
+            <div class="absolute -left-12 -bottom-20 w-72 h-72 bg-white/5 rounded-full"></div>
+
+            <div class="relative">
+                <div class="flex items-center gap-3">
+                    <span class="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
+                        <i data-lucide="zap" class="w-6 h-6 text-white"></i>
+                    </span>
+                    <span class="font-semibold text-lg tracking-tight">Skill MCP</span>
+                </div>
             </div>
 
-            <form method="POST" action="/admin/login" class="space-y-6">
+            <div class="relative space-y-4">
+                <h1 class="text-3xl font-semibold leading-tight tracking-tight">管理控制台</h1>
+                <p class="text-emerald-50 text-sm leading-relaxed">集中管理用户、技能与授权配置。<br>使用您的管理员 API Key 登录。</p>
+                <div class="flex items-center gap-6 pt-2 text-xs text-emerald-50">
+                    <div class="flex items-center gap-1.5">
+                        <i data-lucide="shield-check" class="w-4 h-4"></i>
+                        安全访问
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <i data-lucide="key" class="w-4 h-4"></i>
+                        API Key
+                    </div>
+                </div>
+            </div>
+
+            <div class="relative text-xs text-emerald-100/80">© Skill MCP Server</div>
+        </div>
+
+        <!-- Form panel (right) -->
+        <div class="flex flex-col justify-center p-8 md:p-12">
+            <div class="mb-8">
+                <h2 class="text-2xl font-semibold text-slate-900 tracking-tight">欢迎回来</h2>
+                <p class="text-sm text-slate-500 mt-1.5">请输入您的凭据以登录</p>
+            </div>
+
+            {% if error %}
+            <div class="mb-5 flex items-start gap-2.5 p-3.5 rounded-xl border border-red-200 bg-red-50 text-red-800">
+                <i data-lucide="alert-circle" class="w-5 h-5 shrink-0 mt-0.5 text-red-500"></i>
+                <span class="text-sm">{{ error }}</span>
+            </div>
+            {% endif %}
+
+            <form method="POST" action="/admin/login" class="space-y-5">
                 <div>
-                    <label for="username" class="block text-sm font-medium text-gray-700 mb-1">用户名</label>
+                    <label for="username" class="block text-sm font-medium text-slate-700 mb-1.5">用户名</label>
                     <input type="text" id="username" name="username" required
-                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
-                        placeholder="请输入用户名">
+                        class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
+                        placeholder="管理员用户名">
                 </div>
 
                 <div>
-                    <label for="api_key" class="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+                    <label for="api_key" class="block text-sm font-medium text-slate-700 mb-1.5">API Key</label>
                     <input type="password" id="api_key" name="api_key" required
-                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
-                        placeholder="请输入 API Key">
+                        class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
+                        placeholder="sk-...">
+                    <p class="mt-1.5 text-xs text-slate-500">仅限管理员账户可登录后台</p>
                 </div>
-
-                <div class="text-sm text-gray-500 text-center">
-                    管理员的 API Key
-                </div>
-
-                {% if error %}
-                <div class="bg-red-100 text-red-700 border border-red-400 rounded-lg p-3 text-sm">
-                    {{ error }}
-                </div>
-                {% endif %}
 
                 <button type="submit"
-                    class="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition font-medium">
+                    class="w-full inline-flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white py-2.5 px-4 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 transition">
+                    <i data-lucide="log-in" class="w-4 h-4"></i>
                     登录
                 </button>
             </form>
         </div>
     </div>
+
+    <script>
+    (function() {
+        if (window.lucide && typeof lucide.createIcons === 'function') {
+            lucide.createIcons();
+        }
+    })();
+    </script>
 </body>
 </html>

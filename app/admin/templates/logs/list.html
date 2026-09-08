@@ -1,57 +1,88 @@
 {% extends "base.html" %}
+{% import "_components.html" as ui %}
 
 {% block title %}调用日志 - Skill MCP Admin{% endblock %}
 
-{% block content %}
-<div class="mb-8">
-    <h1 class="text-3xl font-bold text-gray-800">调用日志</h1>
-    <p class="text-gray-600 mt-2">Skill 调用记录</p>
-</div>
+{% block breadcrumb %}
+{{ ui.breadcrumb([{'label': '日志'}]) }}
+{% endblock %}
 
-<!-- Stats -->
+{% block content %}
+{{ ui.page_header('调用日志', 'Skill 调用记录与统计') }}
+
+<!-- Stats row -->
 <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-    <div class="bg-white rounded-lg shadow p-4 text-center">
-        <p class="text-2xl font-bold text-gray-800">{{ stats.total }}</p>
-        <p class="text-gray-500 text-sm">总调用</p>
+    <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+        <div class="flex items-center justify-between">
+            <p class="text-xs font-medium text-slate-500">总调用</p>
+            <i data-lucide="activity" class="w-4 h-4 text-slate-400"></i>
+        </div>
+        <p class="text-2xl font-semibold text-slate-900 mt-2">{{ stats.total }}</p>
     </div>
-    <div class="bg-white rounded-lg shadow p-4 text-center">
-        <p class="text-2xl font-bold text-green-600">{{ stats.success }}</p>
-        <p class="text-gray-500 text-sm">成功</p>
+    <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+        <div class="flex items-center justify-between">
+            <p class="text-xs font-medium text-slate-500">成功</p>
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+        </div>
+        <p class="text-2xl font-semibold text-emerald-600 mt-2">{{ stats.success }}</p>
     </div>
-    <div class="bg-white rounded-lg shadow p-4 text-center">
-        <p class="text-2xl font-bold text-red-600">{{ stats.failure }}</p>
-        <p class="text-gray-500 text-sm">失败</p>
+    <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+        <div class="flex items-center justify-between">
+            <p class="text-xs font-medium text-slate-500">失败</p>
+            <span class="w-2 h-2 rounded-full bg-red-500"></span>
+        </div>
+        <p class="text-2xl font-semibold text-red-600 mt-2">{{ stats.failure }}</p>
     </div>
-    <div class="bg-white rounded-lg shadow p-4 text-center">
-        <p class="text-2xl font-bold text-yellow-600">{{ stats.denied }}</p>
-        <p class="text-gray-500 text-sm">拒绝</p>
+    <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+        <div class="flex items-center justify-between">
+            <p class="text-xs font-medium text-slate-500">拒绝</p>
+            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+        </div>
+        <p class="text-2xl font-semibold text-amber-600 mt-2">{{ stats.denied }}</p>
     </div>
-    <div class="bg-white rounded-lg shadow p-4 text-center">
-        <p class="text-2xl font-bold text-blue-600">{{ stats.avg_duration_ms }}ms</p>
-        <p class="text-gray-500 text-sm">平均耗时</p>
+    <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+        <div class="flex items-center justify-between">
+            <p class="text-xs font-medium text-slate-500">平均耗时</p>
+            <i data-lucide="clock" class="w-4 h-4 text-slate-400"></i>
+        </div>
+        <p class="text-2xl font-semibold text-blue-600 mt-2">{{ stats.avg_duration_ms }}<span class="text-sm text-slate-500 font-normal">ms</span></p>
     </div>
 </div>
 
 <!-- Filters -->
-<div class="bg-white rounded-lg shadow p-6 mb-6">
-    <h2 class="text-lg font-semibold text-gray-800 mb-4">筛选条件</h2>
-    <form method="get" action="/admin/logs" class="flex flex-wrap gap-4 items-end">
+<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-6 mb-6">
+    <div class="flex items-center justify-between mb-4">
         <div>
-            <label class="block text-gray-700 text-sm font-bold mb-2">用户</label>
-            <select name="user_id"
-                class="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <h2 class="text-base font-semibold text-slate-900 flex items-center gap-2">
+                <i data-lucide="filter" class="w-4 h-4 text-slate-400"></i>
+                筛选条件
+            </h2>
+        </div>
+        <!-- Time presets (URL links, dates computed via JS) -->
+        <div class="flex items-center gap-1.5" id="time-presets">
+            <span class="text-xs text-slate-500 mr-1">快捷:</span>
+            <a href="/admin/logs" data-preset="today" class="px-2.5 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded transition">今日</a>
+            <a href="/admin/logs" data-preset="week" class="px-2.5 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded transition">本周</a>
+            <a href="/admin/logs" data-preset="month" class="px-2.5 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded transition">本月</a>
+        </div>
+    </div>
+    <form method="get" action="/admin/logs" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
+        <div>
+            <label for="field-user_id" class="block text-xs font-medium text-slate-700 mb-1.5">用户</label>
+            <select name="user_id" id="field-user_id"
+                class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition">
                 <option value="">全部用户</option>
                 {% for user in users %}
-                <option value="{{ user.id }}" {% if filters.user_id == user.id %}selected{% endif %}>
+                <option value="{{ user.id }}" {% if filters.user_id == user.id|string or filters.user_id == user.id %}selected{% endif %}>
                     {{ user.username }}
                 </option>
                 {% endfor %}
             </select>
         </div>
         <div>
-            <label class="block text-gray-700 text-sm font-bold mb-2">技能</label>
-            <select name="skill_name"
-                class="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <label for="field-skill_name" class="block text-xs font-medium text-slate-700 mb-1.5">技能</label>
+            <select name="skill_name" id="field-skill_name"
+                class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition">
                 <option value="">全部技能</option>
                 {% for skill in skills %}
                 <option value="{{ skill.name }}" {% if filters.skill_name == skill.name %}selected{% endif %}>
@@ -61,9 +92,9 @@
             </select>
         </div>
         <div>
-            <label class="block text-gray-700 text-sm font-bold mb-2">状态</label>
-            <select name="status"
-                class="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <label for="field-status" class="block text-xs font-medium text-slate-700 mb-1.5">状态</label>
+            <select name="status" id="field-status"
+                class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition">
                 <option value="">全部状态</option>
                 <option value="success" {% if filters.status == 'success' %}selected{% endif %}>成功</option>
                 <option value="failure" {% if filters.status == 'failure' %}selected{% endif %}>失败</option>
@@ -71,20 +102,22 @@
             </select>
         </div>
         <div>
-            <label class="block text-gray-700 text-sm font-bold mb-2">开始时间</label>
-            <input type="datetime-local" name="start_time" value="{{ filters.start_time }}"
-                class="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <label for="field-start_time" class="block text-xs font-medium text-slate-700 mb-1.5">开始时间</label>
+            <input type="datetime-local" name="start_time" id="field-start_time" value="{{ filters.start_time }}"
+                class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition">
         </div>
         <div>
-            <label class="block text-gray-700 text-sm font-bold mb-2">结束时间</label>
-            <input type="datetime-local" name="end_time" value="{{ filters.end_time }}"
-                class="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <label for="field-end_time" class="block text-xs font-medium text-slate-700 mb-1.5">结束时间</label>
+            <input type="datetime-local" name="end_time" id="field-end_time" value="{{ filters.end_time }}"
+                class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition">
         </div>
-        <div class="flex gap-2">
-            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition">
+        <div class="md:col-span-2 lg:col-span-5 flex items-center gap-2 pt-2">
+            <button type="submit" class="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-lg transition">
+                <i data-lucide="filter" class="w-4 h-4"></i>
                 筛选
             </button>
-            <a href="/admin/logs" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition">
+            <a href="/admin/logs" class="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-lg transition">
+                <i data-lucide="x" class="w-4 h-4"></i>
                 重置
             </a>
         </div>
@@ -92,69 +125,86 @@
 </div>
 
 <!-- Logs Table -->
-<div class="bg-white rounded-lg shadow overflow-hidden">
-    <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-            <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">时间</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">用户</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">技能</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">耗时</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">错误信息</th>
-            </tr>
-        </thead>
-        <tbody class="bg-white divide-y divide-gray-200">
-            {% for log in logs %}
-            <tr class="hover:bg-gray-50">
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ log.id }}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ log.call_time.strftime('%m-%d %H:%M:%S') if log.call_time else '-' }}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ log.username or log.user_id }}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ log.skill_name or log.skill_id }}</td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                    {% if log.status == 'success' %}
-                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">成功</span>
-                    {% elif log.status == 'failure' %}
-                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">失败</span>
-                    {% elif log.status == 'denied' %}
-                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">拒绝</span>
-                    {% else %}
-                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">{{ log.status }}</span>
-                    {% endif %}
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ log.duration_ms }}ms</td>
-                <td class="px-6 py-4 text-sm text-red-600 max-w-xs truncate">{{ log.error_message or '-' }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
+{% if logs %}
+{% call ui.data_table(['ID', '时间', '用户', '技能', '状态', '耗时', '错误信息']) %}
+    {% for log in logs %}
+    <tr class="hover:bg-slate-50 transition">
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 font-mono">{{ log.id }}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+            <div class="flex items-center gap-1.5">
+                <i data-lucide="clock" class="w-3.5 h-3.5 text-slate-400"></i>
+                {{ log.call_time.strftime('%m-%d %H:%M:%S') if log.call_time else '-' }}
+            </div>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">{{ log.username or log.user_id }}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{{ log.skill_name or log.skill_id }}</td>
+        <td class="px-6 py-4 whitespace-nowrap">
+            {{ ui.status_pill(log.status) }}
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{{ log.duration_ms }}ms</td>
+        <td class="px-6 py-4 text-sm text-red-600 max-w-xs truncate" title="{{ log.error_message or '' }}">{{ log.error_message or '-' }}</td>
+    </tr>
+    {% endfor %}
+{% endcall %}
+{% else %}
+{{ ui.empty_state('activity', '暂无日志记录', '调整筛选条件或等待新日志产生') }}
+{% endif %}
 
 <!-- Pagination -->
 {% if total_pages > 1 %}
-<div class="mt-4 flex justify-center gap-2">
-    {% if page > 1 %}
-    <a href="?page={{ page - 1 }}&user_id={{ filters.user_id }}&skill_name={{ filters.skill_name }}&status={{ filters.status }}&start_time={{ filters.start_time }}&end_time={{ filters.end_time }}"
-        class="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded">上一页</a>
-    {% endif %}
-
-    <span class="px-3 py-1">第 {{ page }} / {{ total_pages }} 页</span>
-
-    {% if page < total_pages %}
-    <a href="?page={{ page + 1 }}&user_id={{ filters.user_id }}&skill_name={{ filters.skill_name }}&status={{ filters.status }}&start_time={{ filters.start_time }}&end_time={{ filters.end_time }}"
-        class="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded">下一页</a>
-    {% endif %}
+<div class="mt-5 flex items-center justify-between flex-wrap gap-3">
+    <p class="text-sm text-slate-500">共 <span class="font-medium text-slate-900">{{ total }}</span> 条记录</p>
+    <div class="flex items-center gap-1.5">
+        {% if page > 1 %}
+        <a href="?page={{ page - 1 }}&user_id={{ filters.user_id }}&skill_name={{ filters.skill_name }}&status={{ filters.status }}&start_time={{ filters.start_time }}&end_time={{ filters.end_time }}"
+            class="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition">
+            <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+            上一页
+        </a>
+        {% endif %}
+        <span class="px-3 py-1.5 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg">第 <span class="font-medium text-slate-900">{{ page }}</span> / {{ total_pages }} 页</span>
+        {% if page < total_pages %}
+        <a href="?page={{ page + 1 }}&user_id={{ filters.user_id }}&skill_name={{ filters.skill_name }}&status={{ filters.status }}&start_time={{ filters.start_time }}&end_time={{ filters.end_time }}"
+            class="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition">
+            下一页
+            <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+        </a>
+        {% endif %}
+    </div>
 </div>
+{% else %}
+<div class="mt-4 text-center text-sm text-slate-500">共 {{ total }} 条记录</div>
 {% endif %}
+{% endblock %}
 
-<div class="mt-4 text-center text-gray-500">
-    共 {{ total }} 条记录
-</div>
-
-{% if not logs %}
-<div class="text-center py-12 text-gray-500">
-    <p>暂无日志记录</p>
-</div>
-{% endif %}
+{% block scripts %}
+<script>
+(function() {
+    function pad(n) { return String(n).padStart(2, '0'); }
+    function toLocal(d) {
+        return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+            + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    }
+    var now = new Date();
+    var s, e, range;
+    document.querySelectorAll('#time-presets [data-preset]').forEach(function(a) {
+        var p = a.getAttribute('data-preset');
+        if (p === 'today') {
+            s = new Date(now); s.setHours(0, 0, 0, 0);
+            e = new Date(now); e.setHours(23, 59, 0, 0);
+            range = 'start_time=' + toLocal(s) + '&end_time=' + toLocal(e);
+        } else if (p === 'week') {
+            var day = now.getDay() || 7;
+            s = new Date(now); s.setDate(now.getDate() - (day - 1)); s.setHours(0, 0, 0, 0);
+            e = new Date(s); e.setDate(s.getDate() + 6); e.setHours(23, 59, 0, 0);
+            range = 'start_time=' + toLocal(s) + '&end_time=' + toLocal(e);
+        } else if (p === 'month') {
+            s = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+            e = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 0, 0);
+            range = 'start_time=' + toLocal(s) + '&end_time=' + toLocal(e);
+        }
+        if (range) a.setAttribute('href', '/admin/logs?' + range);
+    });
+})();
+</script>
 {% endblock %}
