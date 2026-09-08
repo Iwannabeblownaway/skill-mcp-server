@@ -69,6 +69,25 @@
 
     <!-- Right: skills -->
     <div class="lg:col-span-2 space-y-5">
+        <!-- MCP Access card -->
+        <div class="bg-white border border-purple-200 rounded-xl shadow-sm p-6">
+            <div class="flex items-center justify-between mb-3">
+                <div>
+                    <h2 class="text-base font-semibold text-slate-900 flex items-center gap-2">
+                        <i data-lucide="plug-zap" class="w-4 h-4 text-purple-500"></i>
+                        MCP 接入配置
+                    </h2>
+                    <p class="text-xs text-slate-500 mt-0.5">复制下方 JSON 到 Claude Desktop / Cursor / Claude Code 等 MCP 客户端</p>
+                </div>
+                <button type="button" onclick="window.openMcpModal({{ user.id }})"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-500 hover:bg-purple-600 text-white text-sm font-medium rounded-lg transition">
+                    <i data-lucide="external-link" class="w-4 h-4"></i>
+                    配置向导
+                </button>
+            </div>
+            <pre class="bg-slate-900 text-slate-100 rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre">{{ mcp_config_json|safe }}</pre>
+        </div>
+
         <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
             <div class="flex items-center justify-between mb-4">
                 <div>
@@ -132,4 +151,7 @@
         </div>
     </div>
 </div>
+
+<!-- MCP config modal (detailed wizard with multi-format tabs) -->
+{{ ui.mcp_config_modal(user, mcp_host) }}
 {% endblock %}

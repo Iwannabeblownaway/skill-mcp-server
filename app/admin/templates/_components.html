@@ -215,6 +215,7 @@
     'emerald': 'text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50',
     'red': 'text-red-500 hover:text-red-700 hover:bg-red-50',
     'amber': 'text-amber-500 hover:text-amber-700 hover:bg-amber-50',
+    'purple': 'text-purple-500 hover:text-purple-700 hover:bg-purple-50',
 } %}
 {% set cls = 'inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-lg transition ' + color_map[color] %}
 {% if type == 'submit' or type == 'confirm' %}
@@ -251,4 +252,255 @@
     <i data-lucide="{{ icon_map[kind] }}" class="w-5 h-5 shrink-0 mt-0.5"></i>
     <span class="text-sm">{{ message }}</span>
 </div>
+{% endmacro %}
+
+{# -------------------------------------------------------------------
+   mcp_config_modal(user, default_host, default_path='/mcp', server_name='skill-mcp')
+   Modal that lets the admin copy a paste-ready MCP JSON config for
+   this user's API key, targeting any of the supported MCP clients.
+   JS lives inline; Lucide icons re-render on show.
+------------------------------------------------------------------- #}
+{% macro mcp_config_modal(user, default_host, default_path='/mcp', server_name='skill-mcp') %}
+<div id="mcp-modal-{{ user.id }}"
+    class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4"
+    onclick="if (event.target === this) window.closeMcpModal({{ user.id }})">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col" onclick="event.stopPropagation()">
+        <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+            <div>
+                <h3 class="text-base font-semibold text-slate-900 flex items-center gap-2">
+                    <i data-lucide="plug-zap" class="w-4 h-4 text-purple-500"></i>
+                    MCP 接入配置 — {{ user.username }}
+                </h3>
+                <p class="text-xs text-slate-500 mt-0.5">复制下面的 JSON 到 MCP 客户端的配置文件</p>
+            </div>
+            <button type="button" onclick="window.closeMcpModal({{ user.id }})"
+                class="text-slate-400 hover:text-slate-700 transition">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <div class="px-6 py-5 space-y-4 overflow-y-auto">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div class="sm:col-span-2">
+                    <label class="block text-xs font-medium text-slate-700 mb-1.5">服务器地址</label>
+                    <input type="text" id="mcp-host-{{ user.id }}" value="{{ default_host }}"
+                        class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                        oninput="window.regenMcpJson({{ user.id }})">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-700 mb-1.5">路径</label>
+                    <input type="text" id="mcp-path-{{ user.id }}" value="{{ default_path }}"
+                        class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                        oninput="window.regenMcpJson({{ user.id }})">
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-xs font-medium text-slate-700 mb-1.5">Server 名称</label>
+                <input type="text" id="mcp-name-{{ user.id }}" value="{{ server_name }}"
+                    class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                    oninput="window.regenMcpJson({{ user.id }})">
+            </div>
+
+            <div class="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                <div class="flex items-center justify-between mb-1.5">
+                    <span class="text-xs font-medium text-slate-500">API Key（已自动填入）</span>
+                </div>
+                <div class="text-xs text-slate-700 font-mono break-all select-all">{{ user.api_key }}</div>
+            </div>
+
+            <div>
+                <div class="flex items-center gap-1 border-b border-slate-200 mb-2" id="mcp-tabs-{{ user.id }}">
+                    <button type="button" data-tab="json"
+                        class="mcp-tab px-3 py-1.5 text-xs font-medium text-slate-900 border-b-2 border-purple-500 transition">
+                        标准 JSON
+                    </button>
+                    <button type="button" data-tab="cline"
+                        class="mcp-tab px-3 py-1.5 text-xs font-medium text-slate-500 border-b-2 border-transparent hover:text-slate-900 transition">
+                        Cline / VS Code
+                    </button>
+                    <button type="button" data-tab="codex"
+                        class="mcp-tab px-3 py-1.5 text-xs font-medium text-slate-500 border-b-2 border-transparent hover:text-slate-900 transition">
+                        Codex (TOML)
+                    </button>
+                    <button type="button" data-tab="curl"
+                        class="mcp-tab px-3 py-1.5 text-xs font-medium text-slate-500 border-b-2 border-transparent hover:text-slate-900 transition">
+                        curl 测试
+                    </button>
+                </div>
+
+                <div class="relative">
+                    <pre id="mcp-pre-{{ user.id }}"
+                        class="bg-slate-900 text-slate-100 rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre max-h-72 overflow-y-auto"></pre>
+                    <button type="button" onclick="window.copyMcpJson({{ user.id }})"
+                        class="absolute top-2 right-2 inline-flex items-center gap-1 px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white text-xs font-medium rounded transition">
+                        <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                        <span id="mcp-copy-label-{{ user.id }}">复制</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800">
+                <div class="flex items-start gap-2">
+                    <i data-lucide="info" class="w-4 h-4 shrink-0 mt-0.5"></i>
+                    <div>
+                        <p class="font-medium mb-1">使用说明</p>
+                        <ul class="space-y-0.5 text-blue-700 list-disc list-inside">
+                            <li>Claude Desktop / Cursor / Claude Code: 粘贴到 <code class="bg-blue-100 rounded px-1">mcpServers</code> 字段</li>
+                            <li>Cline (VS Code): 配置文件中同样使用 <code class="bg-blue-100 rounded px-1">mcpServers</code> 字段</li>
+                            <li>Codex: 追加到 <code class="bg-blue-100 rounded px-1">~/.codex/config.toml</code> 的 <code class="bg-blue-100 rounded px-1">[mcp_servers]</code> 段</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="px-6 py-3 border-t border-slate-200 flex items-center justify-end">
+            <button type="button" onclick="window.closeMcpModal({{ user.id }})"
+                class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-lg transition">
+                关闭
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var uid = {{ user.id }};
+    var apiKey = {{ user.api_key|tojson }};
+
+    function buildJson() {
+        var host = document.getElementById('mcp-host-' + uid).value.trim().replace(/\/+$/, '');
+        var path = document.getElementById('mcp-path-' + uid).value.trim();
+        if (!path.startsWith('/')) path = '/' + path;
+        var name = document.getElementById('mcp-name-' + uid).value.trim() || 'skill-mcp';
+        var url = host + path;
+        return JSON.stringify({
+            mcpServers: (function() {
+                var o = {};
+                o[name] = {
+                    url: url,
+                    headers: { 'X-API-Key': apiKey }
+                };
+                return o;
+            })()
+        }, null, 2);
+    }
+
+    function buildToml() {
+        var host = document.getElementById('mcp-host-' + uid).value.trim().replace(/\/+$/, '');
+        var path = document.getElementById('mcp-path-' + uid).value.trim();
+        if (!path.startsWith('/')) path = '/' + path;
+        var name = document.getElementById('mcp-name-' + uid).value.trim() || 'skill-mcp';
+        return '[mcp_servers.' + name + ']\n' +
+               'url = "' + host + path + '"\n' +
+               'headers = { X-API-Key = "' + apiKey + '" }';
+    }
+
+    function buildCurl() {
+        var host = document.getElementById('mcp-host-' + uid).value.trim().replace(/\/+$/, '');
+        var path = document.getElementById('mcp-path-' + uid).value.trim();
+        if (!path.startsWith('/')) path = '/' + path;
+        return 'curl -X POST ' + host + path + ' \\\n' +
+               '  -H "Content-Type: application/json" \\\n' +
+               '  -H "Accept: application/json, text/event-stream" \\\n' +
+               '  -H "X-API-Key: ' + apiKey + '" \\\n' +
+               '  -d \'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}\'';
+    }
+
+    function activeTab(uid) {
+        var tabs = document.querySelectorAll('#mcp-tabs-' + uid + ' .mcp-tab');
+        for (var i = 0; i < tabs.length; i++) {
+            if (tabs[i].classList.contains('border-purple-500')) return tabs[i].getAttribute('data-tab');
+        }
+        return 'json';
+    }
+
+    window.regenMcpJson = function(uid) {
+        var pre = document.getElementById('mcp-pre-' + uid);
+        var tab = activeTab(uid);
+        if (tab === 'codex') pre.textContent = buildToml();
+        else if (tab === 'curl') pre.textContent = buildCurl();
+        else pre.textContent = buildJson();
+    };
+
+    window.copyMcpJson = function(uid) {
+        var pre = document.getElementById('mcp-pre-' + uid);
+        var text = pre.textContent;
+        var label = document.getElementById('mcp-copy-label-' + uid);
+        var done = function() {
+            if (label) {
+                var orig = label.textContent;
+                label.textContent = '已复制';
+                setTimeout(function() { label.textContent = orig; }, 1500);
+            }
+        };
+        var fail = function() {
+            if (label) {
+                label.textContent = '复制失败';
+                setTimeout(function() { label.textContent = '复制'; }, 1500);
+            }
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(function() {
+                fallbackCopy(text) ? done() : fail();
+            });
+        } else {
+            fallbackCopy(text) ? done() : fail();
+        }
+    };
+
+    function fallbackCopy(text) {
+        try {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            var ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+            return ok;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    window.openMcpModal = function(uid) {
+        var m = document.getElementById('mcp-modal-' + uid);
+        if (!m) return;
+        m.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+        window.regenMcpJson(uid);
+        if (window.lucide && lucide.createIcons) lucide.createIcons();
+    };
+
+    window.closeMcpModal = function(uid) {
+        var m = document.getElementById('mcp-modal-' + uid);
+        if (!m) return;
+        m.classList.add('hidden');
+        document.body.style.overflow = '';
+    };
+
+    // Tab switching
+    var tabs = document.querySelectorAll('#mcp-tabs-' + uid + ' .mcp-tab');
+    for (var i = 0; i < tabs.length; i++) {
+        tabs[i].addEventListener('click', function(e) {
+            var all = document.querySelectorAll('#mcp-tabs-' + uid + ' .mcp-tab');
+            for (var j = 0; j < all.length; j++) {
+                all[j].classList.remove('border-purple-500', 'text-slate-900');
+                all[j].classList.add('border-transparent', 'text-slate-500');
+            }
+            e.currentTarget.classList.remove('border-transparent', 'text-slate-500');
+            e.currentTarget.classList.add('border-purple-500', 'text-slate-900');
+            window.regenMcpJson(uid);
+        });
+    }
+
+    // Esc key closes modal
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') window.closeMcpModal(uid);
+    });
+})();
+</script>
 {% endmacro %}

@@ -399,6 +399,16 @@ async def dashboard(request: Request, admin_user: dict = Depends(require_admin))
 
 # ==================== Users ====================
 
+def _build_mcp_host(request: Request) -> str:
+    """Derive a sensible default MCP server host for copy/paste configs.
+
+    Falls back to scheme + Host header so the modal can show a working URL
+    without requiring the admin to type it.
+    """
+    # Prefer the public-facing host the admin is browsing from
+    return f"{request.url.scheme}://{request.headers.get('host', request.url.netloc)}"
+
+
 @router.get("/users", response_class=HTMLResponse)
 async def user_list(request: Request, admin_user: dict = Depends(require_admin)):
     """List all users."""
@@ -409,6 +419,7 @@ async def user_list(request: Request, admin_user: dict = Depends(require_admin))
         "request": request,
         "message": get_message(request),
         "users": users,
+        "mcp_host": _build_mcp_host(request),
         "admin_user": admin_user,
     })
 
@@ -544,6 +555,8 @@ async def user_update(
 @router.get("/users/{id}", response_class=HTMLResponse)
 async def user_detail(request: Request, id: int, admin_user: dict = Depends(require_admin)):
     """User detail with skills."""
+    import json as _json
+
     async with get_db() as conn:
         user = await user_crud.get_by_id(conn, id)
         if not user:
@@ -564,12 +577,28 @@ async def user_detail(request: Request, id: int, admin_user: dict = Depends(requ
             user_skill_ids = {sk["id"] for sk in user_skills}
             available_skills = [sk for sk in active_skills if sk["id"] not in user_skill_ids]
 
+    mcp_host = _build_mcp_host(request)
+    mcp_config_json = _json.dumps(
+        {
+            "mcpServers": {
+                "skill-mcp": {
+                    "url": f"{mcp_host}/mcp",
+                    "headers": {"X-API-Key": user["api_key"]},
+                }
+            }
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+
     return render_template("users/detail.html", {
         "request": request,
         "message": get_message(request),
         "user": user,
         "user_skills": user_skills,
         "available_skills": available_skills,
+        "mcp_host": mcp_host,
+        "mcp_config_json": mcp_config_json,
         "admin_user": admin_user,
     })
 

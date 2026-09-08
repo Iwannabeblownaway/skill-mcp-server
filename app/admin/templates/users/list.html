@@ -55,6 +55,12 @@
         </td>
         <td class="px-6 py-4 whitespace-nowrap text-right">
             <div class="inline-flex items-center gap-1">
+                <button type="button" onclick="window.openMcpModal({{ user.id }})"
+                    class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-purple-500 hover:text-purple-700 hover:bg-purple-50 rounded-lg transition"
+                    title="复制 MCP 配置">
+                    <i data-lucide="plug-zap" class="w-4 h-4"></i>
+                    <span>MCP</span>
+                </button>
                 {{ ui.icon_button(href='/admin/users/' ~ user.id, icon='eye', label='详情', color='blue') }}
                 <form method="post" action="/admin/users/{{ user.id }}/reset-key" class="inline">
                     {{ ui.icon_button(icon='key', label='重置Key', color='amber', type='submit') }}
@@ -70,4 +76,9 @@
 {% else %}
 {{ ui.empty_state('users', '暂无用户', '点击右上角创建第一个用户', action_label='创建用户', action_href='/admin/users/create') }}
 {% endif %}
+
+<!-- Per-user MCP config modals (one per row) -->
+{% for user in users %}
+    {{ ui.mcp_config_modal(user, mcp_host) }}
+{% endfor %}
 {% endblock %}
