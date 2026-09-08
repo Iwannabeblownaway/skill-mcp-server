@@ -198,6 +198,18 @@ async def list_tools() -> list[MCPTool]:
             )
         )
 
+        tools.append(
+            MCPTool(
+                name="list_my_skills",
+                description="[SKILL] 列出当前用户可用的所有 Skill。仅返回已激活且当前用户已授权的 Skill 名称、描述和文件数量。适合作为发现入口：先调用本工具，再用 get_skill_index / get_skill_file 按需加载具体内容。",
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            )
+        )
+
         # Add per-skill tools (for backward compatibility, returns full folder)
         for skill in all_skills:
             skill_name = skill["name"]
@@ -505,6 +517,49 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 status = "failure"
                 return [TextContent(type="text", text=f"Error: {error_msg}")]
 
+        elif name == "list_my_skills":
+            # No skill_name tracking needed; this is a discovery call.
+            skill_name = None
+            try:
+                from app.db.session import get_db
+                from app.db.crud import skill as skill_crud
+                from app.db.crud import user_skill as user_skill_crud
+
+                if is_admin:
+                    async with get_db() as conn:
+                        all_skills = await skill_crud.list_all(conn, limit=10000)
+                    visible = [s for s in all_skills if s.get("status") == "active"]
+                else:
+                    async with get_db() as conn:
+                        granted = await user_skill_crud.get_user_skills(conn, user_id)
+                    visible = [s for s in granted if s.get("status") == "active"]
+
+                items = []
+                for sk in visible:
+                    try:
+                        idx = skill_crud.load_skill_index(sk["path"])
+                        file_count = len(idx) if idx else 0
+                    except Exception:
+                        file_count = 0
+                    items.append({
+                        "name": sk["name"],
+                        "description": sk.get("description") or "",
+                        "file_count": file_count,
+                    })
+
+                payload = {
+                    "user_id": user_id,
+                    "is_admin": is_admin,
+                    "count": len(items),
+                    "skills": items,
+                }
+                return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False, indent=2))]
+            except Exception as e:
+                logger.error(f"Error calling list_my_skills: {e}")
+                error_msg = str(e)
+                status = "failure"
+                return [TextContent(type="text", text=f"Error: {error_msg}")]
+
         else:
             # Legacy: get_skill_{name} - returns full folder JSON
             if name.startswith("get_skill_"):
@@ -551,6 +606,13 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 )
             except Exception as e:
                 logger.error(f"Failed to log skill call: {e}")
+        elif user_id and not skill_name:
+            # Discovery / cross-cutting tools (e.g. list_my_skills): not bound
+            # to a specific skill row, so skip skill_calls and just log.
+            logger.info(
+                "discovery tool %r called by user %s status=%s",
+                name, user_id, status,
+            )
 
 
 @mcp_server.list_resources()
