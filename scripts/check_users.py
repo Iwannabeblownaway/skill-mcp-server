@@ -1,8 +1,17 @@
 import asyncio
+import os
+
 import aiomysql
 
 async def check_users():
-    pool = await aiomysql.create_pool(host='localhost', port=3306, user='root', password='', db='skill_mcp', charset='utf8mb4')
+    pool = await aiomysql.create_pool(
+        host=os.getenv("DB_HOST", "localhost"),
+        port=int(os.getenv("DB_PORT", "3306")),
+        user=os.getenv("DB_USER", "root"),
+        password=os.getenv("DB_PASSWORD", ""),
+        db=os.getenv("DB_NAME", "skill_mcp"),
+        charset="utf8mb4",
+    )
     async with pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cur:
             print("=== All skills with status ===")

@@ -1,16 +1,25 @@
 #!/usr/bin/env python3
-"""Register colleague and leader skills to database."""
+"""Register colleague and leader skills to database.
 
+Environment variables:
+    DB_HOST: Database host (default: localhost)
+    DB_PORT: Database port (default: 3306)
+    DB_USER: Database user (default: root)
+    DB_PASSWORD: Database password (default: empty)
+    DB_NAME: Database name (default: skill_mcp)
+"""
+
+import os
 import sys
 import pymysql
 from datetime import datetime
 
 conn = pymysql.connect(
-    host="localhost",
-    port=3306,
-    user="Dorothy",
-    password="<redacted>",
-    database="skill_mcp",
+    host=os.getenv("DB_HOST", "localhost"),
+    port=int(os.getenv("DB_PORT", "3306")),
+    user=os.getenv("DB_USER", "root"),
+    password=os.getenv("DB_PASSWORD", ""),
+    database=os.getenv("DB_NAME", "skill_mcp"),
     charset="utf8mb4",
     cursorclass=pymysql.cursors.DictCursor,
 )
